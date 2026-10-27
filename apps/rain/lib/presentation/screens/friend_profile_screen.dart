@@ -18,6 +18,9 @@ import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
+import 'package:rain/presentation/feedback/rain_snack.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 
 class FriendProfileScreen extends ConsumerWidget {
   const FriendProfileScreen({
@@ -348,7 +351,6 @@ class FriendProfileScreen extends ConsumerWidget {
     FriendRecord friend,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       final decision = await ref
           .read(connectionRequestProvider.notifier)
@@ -356,21 +358,21 @@ class FriendProfileScreen extends ConsumerWidget {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(decision.userMessage),
-          backgroundColor: decision.allowed ? null : errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        decision.userMessage,
+        severity: decision.allowed
+            ? RainStateSeverity.neutral
+            : RainStateSeverity.error,
       );
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(_formatError(error)),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        _formatError(error),
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -384,27 +386,17 @@ class FriendProfileScreen extends ConsumerWidget {
       return true;
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_formatError(error)),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
+        showRainSnack(
+          ScaffoldMessenger.of(context),
+          _formatError(error),
+          severity: RainStateSeverity.error,
         );
       }
       return false;
     }
   }
 
-  String _formatError(Object error) {
-    final raw = error.toString().trim();
-    const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
-    for (final prefix in prefixes) {
-      if (raw.startsWith(prefix)) {
-        return raw.substring(prefix.length).trim();
-      }
-    }
-    return raw;
-  }
+  String _formatError(Object error) => rainUserFacingError(error);
 }
 
 class _InfoSection extends StatelessWidget {

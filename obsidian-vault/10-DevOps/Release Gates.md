@@ -19,13 +19,13 @@ As of 2026-06-05, release workflows have these owners:
 
 | Workflow | Purpose | Publish Capability | Required Evidence |
 | --- | --- | --- | --- |
-| `ci.yml` / `CI/CD` | Push/PR quality gate and conditional debug/demo artifacts. | Workflow artifacts only. | Workflow lint, dependency/format/generated checks, analyze/test matrix, Firebase backend validation, Firebase emulator integration, optional debug/demo artifact checks. |
-| `documentation-vault.yml` | Vault-only documentation gate. | None. | `./scripts/check_obsidian_vault.ps1`. |
+| `ci.yml` / `CI/CD` | The single test pipeline (PRs into dev/main, pushes to dev/main, `v*` tags, manual). Demo-signed APKs + Windows + `SHA256SUMS` on main/tag/manual after `Test Gates`. | Workflow artifacts; GitHub Release on `v*` tags (demo-signed, `Publish Tag Release` is the only `contents: write` job). | Workflow lint, dependency/format/generated/line-limit checks, analyze/test matrix (incl. release/CI contract tests), Firebase backend + RTDB rules, Firebase emulator integration, vault check, `sha256sum -c` before publishing. |
 | `main-merge-gate.yml` | Main-branch merge gate. | Workflow artifacts only. | Workflow lint, analyze/test, Firebase backend, Firebase emulator integration, Android debug ABI, Windows demo artifact, Android demo artifacts. |
 | `build-artifacts.yml` / `Build Rain Apps` | Direct test downloads for QA. | `rain-test-*` GitHub pre-release only. | Hard Release Gate, Obsidian vault validation, artifact verification, `rain-release-metadata.json`; release notes label assets as `TEST ARTIFACT ONLY`. |
-| `fast-release.yml` / `Fast Release Apps` | Faster release-page upload for a SHA already proven by `CI/CD`. | GitHub release page. | Exact-target `CI/CD` success URL, metadata asset, and production Remote Config evidence URL when `build_profile=production`. |
 | `validated-release.yml` / `Validated Release Apps` | One workflow to validate selected ref, build apps, and publish. | GitHub release page. | Workflow lint, analyze/test, Firebase backend, Firebase emulator, vault validation, release-evidence gate, metadata asset; production requires Remote Config deploy/readback URL. |
 | `release.yml` / `Release Rain` | Stable production release from an existing tag/ref. | GitHub release page. | Workflow lint, analyze/test, auth lifecycle scenarios, Firebase backend, Firebase emulator, vault validation, Remote Config deploy/readback URL, metadata asset. Direct tag-push publishing is disabled. |
+
+2026-10-27: `documentation-vault.yml` (duplicate of the `ci.yml` vault job), `fast-release.yml` (never run) and `tested-build-artifacts.yml` (one run) were removed; `ci.yml` covers their gates and demo artifacts. Production-signed builds stay in `validated-release.yml`.
 
 All publish-capable workflows now attach `rain-release-metadata.json` recording target ref, target SHA, app version/build, update channel, build profile, artifact purpose, validation workflow, validation run URL, and Remote Config evidence URL when applicable.
 

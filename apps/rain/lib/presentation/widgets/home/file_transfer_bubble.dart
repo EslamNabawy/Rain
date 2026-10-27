@@ -46,6 +46,16 @@ class _FileTransferBubble extends StatelessWidget {
   bool get _canSave =>
       _canOpen && transfer.direction == FileTransferDirection.incoming;
 
+  /// An outgoing offer or any accepted transfer is waiting on the other side.
+  bool get _isWaiting =>
+      transfer.state == FileTransferState.accepted ||
+      (transfer.state == FileTransferState.offered && _isOutgoing);
+
+  bool get _showsProgress =>
+      _isWaiting ||
+      transfer.state == FileTransferState.sending ||
+      transfer.state == FileTransferState.receiving;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -106,23 +116,35 @@ class _FileTransferBubble extends StatelessWidget {
                   fileSize: transfer.fileSize,
                   textColor: textColor,
                   mutedColor: muted,
+                  completed: transfer.state == FileTransferState.completed,
                 ),
-                if (_isActive) ...<Widget>[
+                if (_showsProgress) ...<Widget>[
                   const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: transfer.fileSize <= 0 ? null : transfer.progress,
-                      minHeight: 5,
-                      color: statusColor,
-                      backgroundColor: textColor.withValues(alpha: 0.14),
-                    ),
+                  _FileTransferProgress(
+                    value: _isWaiting || transfer.fileSize <= 0
+                        ? null
+                        : transfer.progress,
+                    color: statusColor,
+                    trackColor: textColor.withValues(alpha: 0.14),
                   ),
+                  if (_isWaiting) ...<Widget>[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Waiting for peer',
+                      key: const ValueKey<String>(
+                        'rain-file-transfer-waiting-label',
+                      ),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: muted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ],
                 if (transfer.error != null && transfer.error!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
-                    transfer.error!,
+                    rainUserFacingError(transfer.error, callContext: false),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: statusColor,
                       fontWeight: FontWeight.w800,
@@ -175,19 +197,34 @@ class _FileTransferHeader extends StatelessWidget {
     required this.fileSize,
     required this.textColor,
     required this.mutedColor,
+    required this.completed,
   });
 
   final String fileName;
   final int fileSize;
   final Color textColor;
   final Color mutedColor;
+  final bool completed;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Icon(Icons.insert_drive_file_outlined, color: textColor),
+        AnimatedSwitcher(
+          duration: RainMotionPolicy.of(context).d(RainMotion.standard),
+          child: completed
+              ? Icon(
+                  Icons.check_circle_rounded,
+                  key: const ValueKey<String>('rain-file-transfer-check'),
+                  color: RainColors.peerMint,
+                )
+              : Icon(
+                  Icons.insert_drive_file_outlined,
+                  key: const ValueKey<String>('rain-file-transfer-file'),
+                  color: textColor,
+                ),
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -215,6 +252,51 @@ class _FileTransferHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _FileTransferProgress extends StatelessWidget {
+  const _FileTransferProgress({
+    required this.value,
+    required this.color,
+    required this.trackColor,
+  });
+
+  /// Null renders the indeterminate bar.
+  final double? value;
+  final Color color;
+  final Color trackColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final target = value;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: target == null
+          ? LinearProgressIndicator(
+              key: const ValueKey<String>('rain-file-transfer-progress'),
+              minHeight: 5,
+              color: color,
+              backgroundColor: trackColor,
+              value: RainMotionPolicy.of(context).reduced ? 0.0 : null,
+            )
+          : TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: target),
+              duration: RainMotionPolicy.of(
+                context,
+              ).d(RainMotion.progressTween),
+              curve: RainMotion.enter,
+              builder: (BuildContext context, double animated, Widget? _) {
+                return LinearProgressIndicator(
+                  key: const ValueKey<String>('rain-file-transfer-progress'),
+                  value: animated,
+                  minHeight: 5,
+                  color: color,
+                  backgroundColor: trackColor,
+                );
+              },
+            ),
     );
   }
 }
@@ -370,4 +452,27 @@ Color _fileTransferStatusColor(FileTransferState state) {
     FileTransferState.failed ||
     FileTransferState.rejected => RainColors.errorCoral,
   };
+}
+
+/// Builds the private transfer bubble for widget tests.
+@visibleForTesting
+Widget buildFileTransferBubbleForTest({
+  required FileTransferView transferView,
+  String timeLabel = '12:00',
+  VoidCallback? onRetry,
+}) {
+  void noop() {}
+  return _FileTransferBubble(
+    transferView: transferView,
+    timeLabel: timeLabel,
+    startsCluster: true,
+    endsCluster: true,
+    maxWidth: 320,
+    onAccept: noop,
+    onReject: noop,
+    onCancel: noop,
+    onOpen: noop,
+    onSave: noop,
+    onRetry: onRetry,
+  );
 }

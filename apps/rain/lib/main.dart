@@ -27,6 +27,7 @@ import 'infrastructure/window/desktop_shell_controller.dart';
 import 'presentation/performance/rain_performance.dart';
 import 'presentation/screens/rain_app.dart';
 import 'presentation/screens/splash_screen.dart';
+import 'presentation/theme/rain_theme.dart';
 
 Future<void> main() async {
   CrashDiagnosticsService? diagnostics;
@@ -145,15 +146,23 @@ class _RainStartupAppState extends State<RainStartupApp> {
           if (snapshot.hasError) {
             final error = snapshot.error!;
             _logBootstrapError(error, snapshot.stackTrace);
-            return BootstrapFailureApp(error: error);
+            return BootstrapFailureApp(
+              error: error,
+              onRetry: () => setState(() {
+                _bootstrapFuture = widget.bootstrapper.bootstrap(
+                  widget.environment,
+                );
+              }),
+            );
           }
 
           final bootstrap = snapshot.data;
           if (bootstrap == null) {
-            return const MaterialApp(
+            return MaterialApp(
               title: 'Rain',
               debugShowCheckedModeBanner: false,
-              home: RainSplashScreen(),
+              theme: RainTheme.dark(),
+              home: const RainSplashScreen(),
             );
           }
 
@@ -211,17 +220,18 @@ class _RainStartupAppState extends State<RainStartupApp> {
 
 @visibleForTesting
 class BootstrapFailureApp extends StatelessWidget {
-  const BootstrapFailureApp({required this.error, super.key});
+  const BootstrapFailureApp({required this.error, this.onRetry, super.key});
 
   final Object error;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Rain',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true),
-      home: RainStartupFailureScreen(error: error),
+      theme: RainTheme.dark(),
+      home: RainStartupFailureScreen(error: error, onRetry: onRetry),
     );
   }
 }

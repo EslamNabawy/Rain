@@ -36,6 +36,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   bool _isConnecting = false;
   bool _showJumpToLatest = false;
   Future<void>? _refreshChatInFlight;
+  // Ids present at first load never animate; others animate once.
+  Set<String>? _initialMessageIds;
+  final Set<String> _enteredMessageIds = <String>{};
 
   @override
   void initState() {
@@ -47,6 +50,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   void didUpdateWidget(covariant _ChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.peerId != widget.peerId) {
+      _initialMessageIds = null;
+      _enteredMessageIds.clear();
       _composerController.clear();
       _setJumpToLatestVisible(false);
       _scheduleJumpToLatest();
@@ -153,6 +158,19 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
+    );
+    ref.listen<AsyncValue<List<FileTransferRecord>>>(
+      fileTransfersProvider(widget.peerId),
+      (previous, next) {
+        final nextTransfers = next.value;
+        if (nextTransfers == null) {
+          return;
+        }
+        rainFileTransferSoundEventsFor(
+          previous: previous?.value,
+          next: nextTransfers,
+        ).forEach(_dispatchSoundEvent);
+      },
     );
 
     return LayoutBuilder(
@@ -780,6 +798,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 in transfers.value ?? const <FileTransferView>[])
               transferView.record.messageId: transferView,
           };
+          final initialIds = _initialMessageIds ??= <String>{
+            for (final item in items) item.id,
+          };
           if (items.isEmpty) {
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -793,7 +814,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 AppStateMessage(
                   icon: Icons.water_drop_outlined,
                   title: 'No messages yet',
-                  message: 'Start the first message when the link is ready.',
+                  message:
+                      'Messages here travel straight between your devices. Say hi below once the link is ready.',
                 ),
               ],
             );
@@ -832,58 +854,65 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
               return RepaintBoundary(
                 key: ValueKey<String>('message-row-${message.id}'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    if (showDayDivider)
-                      RainMessageDayDivider(
-                        label: _formatMessageDay(message.sentAt),
-                      ),
-                    if (transferView != null)
-                      Builder(
-                        builder: (BuildContext context) {
-                          final transfer = transferView.record;
-                          return _FileTransferBubble(
-                            transferView: transferView,
-                            timeLabel: _formatMessageTime(message.sentAt),
-                            startsCluster: startsCluster,
-                            endsCluster: endsCluster,
-                            maxWidth: maxBubbleWidth,
-                            onAccept: () =>
-                                unawaited(_acceptFileTransfer(transfer)),
-                            onReject: () =>
-                                unawaited(_rejectFileTransfer(transfer)),
-                            onCancel: () =>
-                                unawaited(_cancelFileTransfer(transfer)),
-                            onOpen: () =>
-                                unawaited(_openFileTransfer(transfer)),
-                            onSave: () =>
-                                unawaited(_saveFileTransfer(transfer)),
-                            onRetry: _canRetryFileTransfer(transfer)
-                                ? () => unawaited(_retryFileTransfer(transfer))
-                                : null,
-                          );
-                        },
-                      )
-                    else
-                      RainMessageBubble(
-                        text: message.content,
-                        timeLabel: _formatMessageTime(message.sentAt),
-                        isOutgoing: message.isOutgoing,
-                        startsCluster: startsCluster,
-                        endsCluster: endsCluster,
-                        maxWidth: maxBubbleWidth,
-                        deliveryLabel: deliveryLabel,
-                        deliveryColor: deliveryColor,
-                        onRetry:
-                            message.isOutgoing &&
-                                message.status == MessageStatus.failed
-                            ? () => unawaited(_resendMessage(message))
-                            : null,
-                        onOpenActions: () =>
-                            unawaited(_showMessageActions(message)),
-                      ),
-                  ],
+                child: RainMessageEntrance(
+                  animate:
+                      !initialIds.contains(message.id) &&
+                      _enteredMessageIds.add(message.id),
+                  isOutgoing: message.isOutgoing,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (showDayDivider)
+                        RainMessageDayDivider(
+                          label: _formatMessageDay(message.sentAt),
+                        ),
+                      if (transferView != null)
+                        Builder(
+                          builder: (BuildContext context) {
+                            final transfer = transferView.record;
+                            return _FileTransferBubble(
+                              transferView: transferView,
+                              timeLabel: _formatMessageTime(message.sentAt),
+                              startsCluster: startsCluster,
+                              endsCluster: endsCluster,
+                              maxWidth: maxBubbleWidth,
+                              onAccept: () =>
+                                  unawaited(_acceptFileTransfer(transfer)),
+                              onReject: () =>
+                                  unawaited(_rejectFileTransfer(transfer)),
+                              onCancel: () =>
+                                  unawaited(_cancelFileTransfer(transfer)),
+                              onOpen: () =>
+                                  unawaited(_openFileTransfer(transfer)),
+                              onSave: () =>
+                                  unawaited(_saveFileTransfer(transfer)),
+                              onRetry: _canRetryFileTransfer(transfer)
+                                  ? () =>
+                                        unawaited(_retryFileTransfer(transfer))
+                                  : null,
+                            );
+                          },
+                        )
+                      else
+                        RainMessageBubble(
+                          text: message.content,
+                          timeLabel: _formatMessageTime(message.sentAt),
+                          isOutgoing: message.isOutgoing,
+                          startsCluster: startsCluster,
+                          endsCluster: endsCluster,
+                          maxWidth: maxBubbleWidth,
+                          deliveryLabel: deliveryLabel,
+                          deliveryColor: deliveryColor,
+                          onRetry:
+                              message.isOutgoing &&
+                                  message.status == MessageStatus.failed
+                              ? () => unawaited(_resendMessage(message))
+                              : null,
+                          onOpenActions: () =>
+                              unawaited(_showMessageActions(message)),
+                        ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -901,7 +930,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             AppStateMessage(
               icon: Icons.error_outline,
               title: 'Could not load messages',
-              message: error.toString(),
+              message: rainUserFacingError(error),
               iconColor: Theme.of(context).colorScheme.error,
             ),
           ],
@@ -914,7 +943,14 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             horizontalPadding,
             24,
           ),
-          children: const <Widget>[RainStreakSkeleton(rows: 5)],
+          children: const <Widget>[
+            RainDelayedReveal(
+              child: RainStreakSkeleton(
+                rows: 6,
+                variant: RainSkeletonVariant.messages,
+              ),
+            ),
+          ],
         ),
       ),
     );

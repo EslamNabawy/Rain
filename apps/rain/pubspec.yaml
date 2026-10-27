@@ -56,6 +56,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/google_fonts/
     - assets/branding/rain_app_icon_1024.png
     - assets/branding/rain_logo_premium_1024.png
     - assets/branding/generated/peer_core_app_icon_1024.png

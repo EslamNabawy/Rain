@@ -4,6 +4,20 @@ This file must survive across future AI sessions.
 
 Every future session must read this file before starting non-trivial work.
 
+## CI Release Pipeline 2026-10-27
+
+- Branch `ci/release-pipeline` from `dev` @ a12afa3. `ci.yml` is the single test pipeline: push triggers are limited to `dev`, `main` and `v*` tags (pull requests cover feature branches; this ended the double runs). Demo-signed APKs, the Windows folder and a new `Rain-Demo-SHA256SUMS` artifact now also build on push to `main`. A new tag-only `Publish Tag Release` job (the only `contents: write` job) verifies `sha256sum -c` and creates the GitHub Release. Production signing stays in `validated-release.yml` (Remote Config evidence gate).
+- Removed `documentation-vault.yml`, `fast-release.yml` and `tested-build-artifacts.yml`; kept `build-artifacts.yml` and `release.yml`. `release_contract_test.dart` drops the two `fast-release.yml` entries and pins the new CI publish rules. Branch protection is still not configured (owner decision).
+- Security review (security-reviewer agent): no CRITICAL/HIGH. Fixed in 7d551fd: publish-release refuses tags not on main (compare API), `download-artifact` pinned to 9000827 (v8.0.2), required-checks echoes env refs. Open owner decision: a tag ruleset restricting `v*` creation to maintainers.
+- Validation 2026-10-27: manual `CI/CD` run https://github.com/EslamNabawy/Rain/actions/runs/40411155577 on bfd24f8 passed every job (Test Gates, Build EXE and APK Artifacts, Required Checks success; Publish Tag Release skipped as expected without a tag). Artifacts (60-day retention, expire 2026-12-25): `Rain-Demo-Android-Builds` 40.9 MB zip (`Rain-Demo-Android-ARM-v7a-Build.apk` 33,393,058 B, sha256 91e7743a…; `Rain-Demo-Android-ARM-v8-v9-Build.apk` 40,853,562 B, sha256 5d48021b…), `Rain-Demo-Windows-x64-Build` 29.5 MB zip, `Rain-Demo-SHA256SUMS` (77 entries). All three downloaded with `gh run download` and `sha256sum -c SHA256SUMS` passed for all 77 files. Local: protocol_brain tests 300 pass, vault check passed. The tag-release path is not exercised yet (needs a `v*` tag on main).
+
+## UI/UX Level-Up 2026-10-27
+
+- Branch `ui/level-up` (worktree `D:\Rain-uiux`), synced with `dev` at `0772b2a`. Nothing merged into `main` or `dev`. Program: `audit/prompts/rain-uiux-orchestrator.xml`; state and evidence: `audit/ui/STATE.md`; note: [[UI UX Level-Up]].
+- Changed: bundled fonts with runtime fetch off; spacing/radius/motion tokens and a single `RainMotionPolicy`; `rainUserFacingError`; shared busy/skeleton/state-card widgets; continuous splash with captions and cross-fade; startup failure retry; Android 12+ native splash mark; transfer progress and call connecting pulse. Sound: six new generated cues, transfer cues for the open chat, preload, loop fade-out, volume preview, loudness test. Also Android haptics behind a setting, message entrance, press/focus feedback, stateful call-control semantics, empty-state copy, `showRainSnack`, and a resilience/contrast test.
+- Validation 2026-10-27 (local Flutter 3.47.8): analyze clean in all 4 packages. Tests: apps/rain +889 / 30 skipped; protocol_brain, peer_core and rain_core pass. Vault check passed. FORMAT flags 3 dev integration tests (formatter-version drift; dev shows the same diff). The T2.5 launch-background bitmap broke the protocol_brain release contract and was removed.
+- Open: hardening handoffs in `audit/ui/STATE.md` (startup retry provider, app-wide transfer event, optional pre-31 splash contract change); the button font family literal `'Space Grotesk'`; owner device checks (Android cold start, cue listening, haptics, reduced motion).
+
 ## Hardening Audit 2026-10-10
 
 - Work copy `D:Rain`, branch `audit/rain-hardening` (from `dev` `601647c`); `integration/main-dev` holds `origin/main` merged in. Nothing was merged into `main` or `dev`.

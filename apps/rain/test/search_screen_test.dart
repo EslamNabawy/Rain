@@ -194,7 +194,40 @@ void main() {
       findsNothing,
     );
     expect(find.text('Type @handle. Tap + to add.'), findsOneWidget);
+    expect(find.text('Find a friend'), findsOneWidget);
+    expect(find.text('Search by Rain username, then tap Add.'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Find with no matches says what to try next', (
+    WidgetTester tester,
+  ) async {
+    final adapter = _CountingSearchAdapter();
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
+          identityProvider.overrideWith(_SignedInIdentityController.new),
+        ],
+        child: const MaterialApp(home: Scaffold(body: SearchScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'nobody');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No one with that username'), findsOneWidget);
+    expect(
+      find.text(
+        'Check the spelling, or ask your friend for their exact Rain username.',
+      ),
+      findsOneWidget,
+    );
   });
 }
 

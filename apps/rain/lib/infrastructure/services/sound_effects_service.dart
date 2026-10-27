@@ -32,7 +32,16 @@ enum RainSoundEffect {
   unmute,
   deafen,
   undeafen,
+  cameraOn,
+  cameraOff,
+  routeChange,
+  requestInbound,
+  requestAccepted,
+  transferComplete,
 }
+
+const Duration _loopFadeOut = Duration(milliseconds: 120);
+const int _loopFadeSteps = 4;
 
 typedef RainSoundPlayerFactory = RainSoundPlayer Function(String playerId);
 typedef RainSoundSettingsLoader = FutureOr<AppAudioSettings> Function();
@@ -67,6 +76,12 @@ const Map<RainSoundEffect, String> rainSoundEffectAssetPaths =
       RainSoundEffect.unmute: 'sounds/unmute.wav',
       RainSoundEffect.deafen: 'sounds/deafen.wav',
       RainSoundEffect.undeafen: 'sounds/undeafen.wav',
+      RainSoundEffect.cameraOn: 'sounds/camera_on.wav',
+      RainSoundEffect.cameraOff: 'sounds/camera_off.wav',
+      RainSoundEffect.routeChange: 'sounds/route_change.wav',
+      RainSoundEffect.requestInbound: 'sounds/request_inbound.wav',
+      RainSoundEffect.requestAccepted: 'sounds/request_accepted.wav',
+      RainSoundEffect.transferComplete: 'sounds/transfer_complete.wav',
     };
 
 const Map<RainSoundEffect, String> rainSoundEffectLoopAssetPaths =
@@ -82,6 +97,11 @@ abstract interface class RainSoundPlayer {
   });
 
   Future<void> playAsset(String assetPath, {required double volume});
+
+  /// Loads [assetPath] into the player without playing it.
+  Future<void> preload(String assetPath);
+
+  Future<void> setVolume(double volume);
 
   Future<void> setReleaseMode(ReleaseMode mode);
 
@@ -113,6 +133,14 @@ class AudioplayersRainSoundPlayer implements RainSoundPlayer {
   Future<void> playAsset(String assetPath, {required double volume}) {
     return _player.play(AssetSource(assetPath), volume: volume);
   }
+
+  @override
+  Future<void> preload(String assetPath) {
+    return _player.setSource(AssetSource(assetPath));
+  }
+
+  @override
+  Future<void> setVolume(double volume) => _player.setVolume(volume);
 
   @override
   Future<void> setReleaseMode(ReleaseMode mode) {
@@ -157,6 +185,8 @@ class SoundEffectsService {
   final Map<String, RainSoundEffect> _loopEffects = <String, RainSoundEffect>{};
   final Map<RainSoundEffect, DateTime> _lastPlayedAt =
       <RainSoundEffect, DateTime>{};
+  final Set<RainSoundEffect> _warmedUp = <RainSoundEffect>{};
+  final Map<RainSoundPlayer, double> _loopVolumes = <RainSoundPlayer, double>{};
   bool _disabled = false;
   String? _disabledReason;
   String? _lastFailureReason;
@@ -253,6 +283,47 @@ class SoundEffectsService {
     }
   }
 
+  /// Creates and preloads the one-shot player for each effect so the first
+  /// [play] has no load delay. Safe to call more than once; never throws.
+  Future<void> warmUp(Set<RainSoundEffect> effects) async {
+    for (final effect in effects) {
+      if (_disabled) {
+        return;
+      }
+      if (_warmedUp.contains(effect)) {
+        continue;
+      }
+      RainSoundPlayer? player;
+      try {
+        player = _players.putIfAbsent(
+          effect,
+          () => _playerFactory('rain-sfx-${effect.name}'),
+        );
+        await player.configure(
+          mode: PlayerMode.lowLatency,
+          context: _effectAudioContext,
+        );
+        await player.preload(_assetFor(effect));
+        _warmedUp.add(effect);
+      } on MissingPluginException {
+        _disable('pluginUnavailable');
+        return;
+      } catch (error) {
+        _recordFailure('preloadFailed');
+        if (player != null && identical(_players[effect], player)) {
+          _players.remove(effect);
+          await _disposeOneShotPlayer(player);
+        }
+        RainDebugLog.event(
+          category: 'sound_effects',
+          name: 'preload_skipped',
+          severity: RainDebugSeverity.warning,
+          message: 'Rain sound preload skipped: $error',
+        );
+      }
+    }
+  }
+
   Future<void> startLoop(
     RainSoundEffect effect, {
     required String loopId,
@@ -302,28 +373,30 @@ class SoundEffectsService {
     }
 
     final player = _playerFactory(_loopPlayerId(normalizedLoopId));
+    final loopVolume =
+        volume.clamp(0.0, 1.0).toDouble() * settings.soundEffectsVolume;
     _loopPlayers[normalizedLoopId] = player;
     _loopEffects[normalizedLoopId] = effect;
+    _loopVolumes[player] = loopVolume;
     try {
       await player.configure(
         mode: PlayerMode.lowLatency,
         context: _loopAudioContext,
       );
       await player.setReleaseMode(ReleaseMode.loop);
-      await player.playAsset(
-        _loopAssetFor(effect),
-        volume: volume.clamp(0.0, 1.0).toDouble() * settings.soundEffectsVolume,
-      );
+      await player.playAsset(_loopAssetFor(effect), volume: loopVolume);
     } on MissingPluginException {
       _disable('pluginUnavailable');
       _loopPlayers.remove(normalizedLoopId);
       _loopEffects.remove(normalizedLoopId);
+      _loopVolumes.remove(player);
       await _stopAndDisposeLoopPlayer(player);
-      await stopAllLoops();
+      await _stopAllLoops(fade: false);
     } catch (error) {
       _recordFailure('loopPlaybackFailed');
       _loopPlayers.remove(normalizedLoopId);
       _loopEffects.remove(normalizedLoopId);
+      _loopVolumes.remove(player);
       await _stopAndDisposeLoopPlayer(player);
       RainDebugLog.event(
         category: 'sound_effects',
@@ -344,20 +417,57 @@ class SoundEffectsService {
     if (player == null) {
       return;
     }
+    await _fadeOutLoopPlayer(player);
     await _stopAndDisposeLoopPlayer(player);
   }
 
-  Future<void> stopAllLoops() async {
+  Future<void> stopAllLoops() => _stopAllLoops(fade: true);
+
+  Future<void> _stopAllLoops({required bool fade}) async {
     final players = _loopPlayers.values.toList(growable: false);
     _loopPlayers.clear();
     _loopEffects.clear();
-    await Future.wait(players.map(_stopAndDisposeLoopPlayer));
+    await Future.wait(
+      players.map((player) async {
+        if (fade) {
+          await _fadeOutLoopPlayer(player);
+        }
+        await _stopAndDisposeLoopPlayer(player);
+      }),
+    );
+  }
+
+  /// Ramps a loop to silence in [_loopFadeSteps] steps over [_loopFadeOut]
+  /// so ringing ends without an audible click. Failures skip to the stop.
+  Future<void> _fadeOutLoopPlayer(RainSoundPlayer player) async {
+    final startVolume = _loopVolumes.remove(player);
+    if (startVolume == null || startVolume <= 0) {
+      return;
+    }
+    final stepDelay = _loopFadeOut ~/ _loopFadeSteps;
+    try {
+      for (var step = _loopFadeSteps - 1; step >= 0; step -= 1) {
+        await player.setVolume(startVolume * step / _loopFadeSteps);
+        if (step > 0) {
+          await Future<void>.delayed(stepDelay);
+        }
+      }
+    } catch (error) {
+      RainDebugLog.event(
+        category: 'sound_effects',
+        name: 'loop_fade_ignored',
+        severity: RainDebugSeverity.debug,
+        message: 'Rain sound loop fade ignored: $error',
+      );
+    }
   }
 
   Future<void> stopAll() async {
-    await stopAllLoops();
+    await _stopAllLoops(fade: false);
+    _loopVolumes.clear();
     final players = _players.values.toList(growable: false);
     _players.clear();
+    _warmedUp.clear();
     _lastPlayedAt.clear();
     await Future.wait(players.map(_stopAndDisposeOneShotPlayer));
   }
@@ -500,6 +610,12 @@ double _volumeFor(
     RainSoundEffect.unmute => 0.28,
     RainSoundEffect.deafen => 0.26,
     RainSoundEffect.undeafen => 0.28,
+    RainSoundEffect.cameraOn => 0.28,
+    RainSoundEffect.cameraOff => 0.26,
+    RainSoundEffect.routeChange => 0.24,
+    RainSoundEffect.requestInbound => 0.34,
+    RainSoundEffect.requestAccepted => 0.32,
+    RainSoundEffect.transferComplete => 0.30,
   };
   if (!voiceCallActive ||
       (!_isCriticalCallEffect(effect) && !allowDuringCall)) {
@@ -523,6 +639,12 @@ Duration _throttleFor(RainSoundEffect effect) {
     RainSoundEffect.unmute => const Duration(milliseconds: 140),
     RainSoundEffect.deafen => const Duration(milliseconds: 140),
     RainSoundEffect.undeafen => const Duration(milliseconds: 140),
+    RainSoundEffect.cameraOn => const Duration(milliseconds: 140),
+    RainSoundEffect.cameraOff => const Duration(milliseconds: 140),
+    RainSoundEffect.routeChange => const Duration(milliseconds: 140),
+    RainSoundEffect.requestInbound => const Duration(milliseconds: 520),
+    RainSoundEffect.requestAccepted => const Duration(milliseconds: 260),
+    RainSoundEffect.transferComplete => const Duration(milliseconds: 260),
   };
 }
 
@@ -548,10 +670,16 @@ bool _isCriticalCallEffect(RainSoundEffect effect) {
     RainSoundEffect.unmute ||
     RainSoundEffect.deafen ||
     RainSoundEffect.undeafen ||
+    RainSoundEffect.cameraOn ||
+    RainSoundEffect.cameraOff ||
+    RainSoundEffect.routeChange ||
     RainSoundEffect.error => true,
     RainSoundEffect.send ||
     RainSoundEffect.receive ||
-    RainSoundEffect.action => false,
+    RainSoundEffect.action ||
+    RainSoundEffect.requestInbound ||
+    RainSoundEffect.requestAccepted ||
+    RainSoundEffect.transferComplete => false,
   };
 }
 
@@ -565,10 +693,16 @@ bool _isCallSoundEffect(RainSoundEffect effect) {
     RainSoundEffect.mute ||
     RainSoundEffect.unmute ||
     RainSoundEffect.deafen ||
-    RainSoundEffect.undeafen => true,
+    RainSoundEffect.undeafen ||
+    RainSoundEffect.cameraOn ||
+    RainSoundEffect.cameraOff ||
+    RainSoundEffect.routeChange => true,
     RainSoundEffect.send ||
     RainSoundEffect.receive ||
     RainSoundEffect.action ||
-    RainSoundEffect.error => false,
+    RainSoundEffect.error ||
+    RainSoundEffect.requestInbound ||
+    RainSoundEffect.requestAccepted ||
+    RainSoundEffect.transferComplete => false,
   };
 }

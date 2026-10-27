@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/presentation/feedback/rain_haptics.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 class RainCallControls extends StatelessWidget {
@@ -123,32 +124,59 @@ class RainCallControls extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final visual = rainVoiceCallControlVisual(state, capability);
     final control = switch (capability) {
-      CallControlCapability.microphone => IconButton(
-        tooltip: visual.tooltip,
-        onPressed: state.isActive ? onToggleMute : null,
-        icon: Icon(visual.icon),
+      CallControlCapability.microphone => _ToggleSemantics(
+        label: 'Microphone',
+        on: !state.isMuted,
+        child: IconButton(
+          key: const ValueKey<String>('qa.call.microphone'),
+          tooltip: visual.tooltip,
+          onPressed: state.isActive
+              ? RainHaptics.wrap(
+                  context,
+                  onToggleMute,
+                  RainHapticKind.selection,
+                )
+              : null,
+          icon: Icon(visual.icon),
+        ),
       ),
-      CallControlCapability.camera => IconButton(
-        tooltip: visual.tooltip,
-        onPressed: state.isActive ? onToggleCamera : null,
-        icon: Icon(visual.icon),
+      CallControlCapability.camera => _ToggleSemantics(
+        label: 'Camera',
+        on: !state.isCameraMuted,
+        child: IconButton(
+          key: const ValueKey<String>('qa.call.camera'),
+          tooltip: visual.tooltip,
+          onPressed: state.isActive
+              ? RainHaptics.wrap(
+                  context,
+                  onToggleCamera,
+                  RainHapticKind.selection,
+                )
+              : null,
+          icon: Icon(visual.icon),
+        ),
       ),
       CallControlCapability.switchCamera => IconButton(
         tooltip: visual.tooltip,
         onPressed: state.isActive ? onSwitchCamera : null,
         icon: Icon(visual.icon),
       ),
-      CallControlCapability.deafen => IconButton(
-        tooltip: visual.tooltip,
-        onPressed: state.isActive ? onToggleDeafen : null,
-        icon: Icon(visual.icon),
+      CallControlCapability.deafen => _ToggleSemantics(
+        label: 'Call audio',
+        on: !state.isDeafened,
+        child: IconButton(
+          key: const ValueKey<String>('qa.call.deafen'),
+          tooltip: visual.tooltip,
+          onPressed: state.isActive ? onToggleDeafen : null,
+          icon: Icon(visual.icon),
+        ),
       ),
       CallControlCapability.outputRoute => _buildOutputRouteControl(
         visual: visual,
       ),
       CallControlCapability.hangUp => IconButton.filled(
         tooltip: visual.tooltip,
-        onPressed: onHangUp,
+        onPressed: RainHaptics.wrap(context, onHangUp, RainHapticKind.medium),
         style: IconButton.styleFrom(
           backgroundColor: scheme.errorContainer,
           foregroundColor: scheme.onErrorContainer,
@@ -331,6 +359,30 @@ class RainCallControls extends StatelessWidget {
   }
 }
 
+/// Announces a call toggle as "<label>, On/Off" with its toggled state.
+class _ToggleSemantics extends StatelessWidget {
+  const _ToggleSemantics({
+    required this.label,
+    required this.on,
+    required this.child,
+  });
+
+  final String label;
+  final bool on;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: label,
+      value: on ? 'On' : 'Off',
+      toggled: on,
+      child: child,
+    );
+  }
+}
+
 class RainCallControlDock extends StatelessWidget {
   const RainCallControlDock({
     super.key,
@@ -423,7 +475,11 @@ class _IncomingCallActions extends StatelessWidget {
         final reject = _CallActionButton(
           key: const ValueKey<String>('rain-call-decline-button'),
           semanticsLabel: 'Decline call',
-          onPressed: onReject,
+          onPressed: RainHaptics.wrap(
+            context,
+            onReject,
+            RainHapticKind.medium,
+          )!,
           icon: Icons.phone_disabled,
           label: 'Decline',
           tone: _CallActionTone.danger,
@@ -431,7 +487,11 @@ class _IncomingCallActions extends StatelessWidget {
         final accept = _CallActionButton(
           key: const ValueKey<String>('rain-call-accept-button'),
           semanticsLabel: 'Answer call',
-          onPressed: onAccept,
+          onPressed: RainHaptics.wrap(
+            context,
+            onAccept,
+            RainHapticKind.medium,
+          )!,
           icon: Icons.call,
           label: 'Answer',
           tone: _CallActionTone.success,

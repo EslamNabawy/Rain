@@ -707,10 +707,28 @@ void main() {
     expect(workflow, contains('Create GitHub Release'));
   });
 
+  test('CI tag releases are gated, checksummed and least-privilege', () {
+    final workflow = _repoFile('.github/workflows/ci.yml');
+
+    expect(workflow, contains('publish-release:'));
+    expect(workflow, contains('Rain-Demo-SHA256SUMS'));
+    expect(workflow, contains('sha256sum -c SHA256SUMS'));
+    expect(workflow, contains("startsWith(github.ref, 'refs/tags/v')"));
+    expect(workflow, contains('needs.publish-release.result'));
+    // Only the publish job may write; the workflow default stays read-only.
+    expect(workflow, contains('permissions:\n  contents: read'));
+    expect(
+      RegExp('contents: write').allMatches(workflow).length,
+      1,
+      reason: 'only publish-release may request contents: write',
+    );
+    expect(workflow, isNot(contains('pull_request_target')));
+    expect(workflow, isNot(contains('RAIN_RELEASE_KEYSTORE_BASE64')));
+  });
+
   test('publish-capable workflows emit release metadata evidence', () {
     final workflows = <String>[
       _repoFile('.github/workflows/build-artifacts.yml'),
-      _repoFile('.github/workflows/fast-release.yml'),
       _repoFile('.github/workflows/validated-release.yml'),
       _repoFile('.github/workflows/release.yml'),
     ];
@@ -726,7 +744,6 @@ void main() {
 
   test('production release workflows require Remote Config evidence', () {
     final workflows = <String>[
-      _repoFile('.github/workflows/fast-release.yml'),
       _repoFile('.github/workflows/validated-release.yml'),
       _repoFile('.github/workflows/release.yml'),
     ];

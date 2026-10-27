@@ -126,5 +126,33 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test('file transfer events require a transfer id', () {
+      final completed = RainSoundEvent.fileTransferCompleted(
+        transferId: ' transfer-1 ',
+        peerId: ' Bob ',
+      );
+      final failed = RainSoundEvent.fileTransferFailed(
+        transferId: 'transfer-2',
+      );
+
+      expect(completed.kind, RainSoundEventKind.fileTransferCompleted);
+      expect(completed.transferId, 'transfer-1');
+      expect(completed.peerId, 'Bob');
+      expect(completed.isFileTransferEvent, isTrue);
+      expect(completed.isConnectionRequestEvent, isFalse);
+      expect(completed.isCallLifecycleEvent, isFalse);
+      expect(completed.isCallControlEvent, isFalse);
+      expect(failed.kind, RainSoundEventKind.fileTransferFailed);
+      expect(failed.isFileTransferEvent, isTrue);
+      expect(
+        () => RainSoundEvent.fileTransferCompleted(transferId: ' '),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => RainSoundEvent.fileTransferFailed(transferId: ''),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 }

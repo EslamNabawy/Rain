@@ -109,4 +109,101 @@ void main() {
       );
     }
   });
+
+  testWidgets('AppStateMessage renders through RainMistStateCard with action', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppStateMessage(
+          icon: Icons.inbox_outlined,
+          title: 'Nothing here',
+          message: 'Try again later.',
+          action: TextButton(onPressed: () {}, child: const Text('Retry')),
+        ),
+      ),
+    );
+
+    expect(find.byType(RainMistStateCard), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('RainMistStateCard fades in and settles', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: RainMistStateCard(title: 'Hello', message: 'World'),
+      ),
+    );
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpAndSettle();
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('RainMistStateCard has no pending animation when reduced', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MediaQuery(
+        data: MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: RainMistStateCard(title: 'Hello', message: 'World'),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('skeleton variants render their row keys', (tester) async {
+    await tester.pumpWidget(
+      const MediaQuery(
+        data: MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: Column(
+            children: <Widget>[
+              RainStreakSkeleton(
+                rows: 2,
+                variant: RainSkeletonVariant.messages,
+              ),
+              RainStreakSkeleton(rows: 2, variant: RainSkeletonVariant.friends),
+              RainStreakSkeleton(rows: 2),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain_skeleton_message_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain_skeleton_friend_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain_streak_skeleton_row_1')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('skeleton pulses normally and is still under reduced motion', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: RainStreakSkeleton(rows: 2)),
+    );
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    await tester.pumpWidget(
+      const MediaQuery(
+        data: MediaQueryData(disableAnimations: true),
+        child: MaterialApp(home: RainStreakSkeleton(rows: 2)),
+      ),
+    );
+    await tester.pump();
+    expect(tester.hasRunningAnimations, isFalse);
+  });
 }

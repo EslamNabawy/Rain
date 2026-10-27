@@ -15,15 +15,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:rain/application/audio/sound_event_router.dart';
 import 'package:rain/application/runtime/app_exit_coordinator.dart';
+import 'package:rain/infrastructure/services/sound_effects_service.dart';
 
 import 'core_providers.dart';
 import 'runtime_providers.dart';
 
 final soundEventRouterProvider = Provider<SoundEventRouter>((Ref ref) {
+  final effects = ref.watch(soundEffectsProvider);
   final router = SoundEventRouter(
-    effects: ref.watch(soundEffectsProvider),
+    effects: effects,
     settingsLoader: ref.watch(appSettingsStoreProvider).loadAudioSettings,
     callStateReader: () => ref.read(voiceCallProvider),
+  );
+  // Preload the most frequent cues so the first send/receive has no delay.
+  unawaited(
+    effects.warmUp(const <RainSoundEffect>{
+      RainSoundEffect.send,
+      RainSoundEffect.receive,
+      RainSoundEffect.action,
+      RainSoundEffect.error,
+    }),
   );
   final exitRegistration = AppExitCoordinator.instance.register(
     (_) => router.stopAllForAppExit(),

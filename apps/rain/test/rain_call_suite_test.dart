@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_suite.dart';
 
 void main() {
@@ -89,6 +90,51 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-manager-bar')),
       findsNothing,
     );
+  });
+
+  testWidgets('microphone control announces its on/off state', (
+    WidgetTester tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    Future<void> pumpControls(VoiceCallState state) {
+      return tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RainCallControls(
+              state: state,
+              onAccept: () {},
+              onReject: () {},
+              onHangUp: () {},
+              onRetry: () {},
+              onToggleMute: () {},
+              controlCapabilities: const <CallControlCapability>[
+                CallControlCapability.microphone,
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final micSemantics = find.byWidgetPredicate(
+      (Widget widget) =>
+          widget is Semantics && widget.properties.label == 'Microphone',
+    );
+
+    await pumpControls(_call());
+    expect(
+      tester.getSemantics(find.bySemanticsLabel(RegExp('^Microphone'))).value,
+      'On',
+    );
+    expect(tester.widget<Semantics>(micSemantics).properties.toggled, isTrue);
+
+    await pumpControls(_call().copyWith(isMuted: true));
+    expect(
+      tester.getSemantics(find.bySemanticsLabel(RegExp('^Microphone'))).value,
+      'Off',
+    );
+    expect(tester.widget<Semantics>(micSemantics).properties.toggled, isFalse);
+    handle.dispose();
   });
 }
 

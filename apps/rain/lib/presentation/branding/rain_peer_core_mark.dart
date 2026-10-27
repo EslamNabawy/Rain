@@ -14,7 +14,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'package:rain/presentation/performance/rain_performance.dart';
+import 'package:rain/presentation/performance/rain_motion_policy.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 import 'rain_brand_assets.dart';
@@ -61,6 +61,7 @@ class RainPeerCoreAnimatedMark extends StatefulWidget {
     this.motion = RainPeerCoreMotion.wave,
     this.startupWave = true,
     this.semanticLabel = 'Rain',
+    @visibleForTesting this.clock = DateTime.now,
   });
 
   final double size;
@@ -69,6 +70,10 @@ class RainPeerCoreAnimatedMark extends StatefulWidget {
   final RainPeerCoreMotion motion;
   final bool startupWave;
   final String semanticLabel;
+
+  /// Wall clock used to resume the orbital loop mid-phase when the mark is
+  /// re-mounted, so startup hand-offs do not restart the rotation.
+  final DateTime Function() clock;
 
   @override
   State<RainPeerCoreAnimatedMark> createState() =>
@@ -177,8 +182,7 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
   bool _shouldAnimate(BuildContext context) {
     return widget.animate &&
         !widget.reducedMotion &&
-        MediaQuery.maybeOf(context)?.disableAnimations != true &&
-        !RainPerformanceScope.read(context).isLowPower;
+        !RainMotionPolicy.read(context).reduced;
   }
 
   void _syncMotion({required bool fromStart}) {
@@ -203,7 +207,7 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
     if (widget.motion == RainPeerCoreMotion.orbitalMesh) {
       if (!_meshController.isAnimating) {
         if (fromStart) {
-          _meshController.value = 0;
+          _meshController.value = _loopPhaseNow();
         }
         _meshController.repeat();
       }
@@ -213,6 +217,11 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
         _meshController.value = 0;
       }
     }
+  }
+
+  double _loopPhaseNow() {
+    final loopMs = RainMotion.ambientLoop.inMilliseconds;
+    return (widget.clock().millisecondsSinceEpoch % loopMs) / loopMs;
   }
 
   double _delayedIntroProgress(double delay) {
