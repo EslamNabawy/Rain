@@ -117,7 +117,7 @@ jobs:
 
       - name: Enforce Dart formatting
         run: |
-          dart format --output=show --set-exit-if-changed \
+          dart format --output=json --set-exit-if-changed \
             apps/rain/lib \
             apps/rain/test \
             apps/rain/tool \
