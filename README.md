@@ -165,7 +165,7 @@ rain/
 
 | Tool | Version |
 |---|---|
-| Flutter | `3.44.0` |
+| Flutter | `3.47.8` |
 | Dart SDK | `^3.10.4` |
 | JDK | 21 (Android builds) |
 | Android SDK cmdline-tools | Latest (Android builds) |
