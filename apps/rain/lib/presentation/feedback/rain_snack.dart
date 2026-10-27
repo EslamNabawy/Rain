@@ -8,7 +8,7 @@
 /// **Depends on:** RainStateSeverity, theme snackBarTheme
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 

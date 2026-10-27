@@ -9,7 +9,7 @@
 /// **Depends on:** RainTheme, RainPerformanceScope, rain_state_surfaces
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Spacing scale shared by presentation code. Use these in code you touch;
 /// existing literals are not swept.

@@ -8,7 +8,7 @@
 /// **Depends on:** infrastructure/services/force_update_service
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:rain/infrastructure/services/force_update_service.dart';
 

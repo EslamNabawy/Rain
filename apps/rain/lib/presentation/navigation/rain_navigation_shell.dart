@@ -9,7 +9,7 @@
 /// **Depends on:** RainBackdrop, app routes
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:rain/presentation/widgets/rain_backdrop.dart';

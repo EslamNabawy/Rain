@@ -8,7 +8,7 @@
 /// **Depends on:** Material
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 const Key soundPreviewButtonKey = ValueKey<String>('qa.settings.sound_test');
 

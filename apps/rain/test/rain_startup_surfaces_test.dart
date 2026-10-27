@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
