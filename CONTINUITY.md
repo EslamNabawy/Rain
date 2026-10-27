@@ -39,6 +39,12 @@ Every future session must read this file before starting non-trivial work.
 - The stale `Melos 7` label in `packages/protocol_brain/test/workspace_contract_test.dart` was updated to Melos 8; the contract test passes.
 - Validation on 2026-10-28: all four package analyses passed; peer_core, protocol_brain, rain_core, and Rain app tests passed. Rain app result: 890 passed, 30 skipped, exit code 0. Vault validation is the remaining documentation gate before opening the PR.
 
+## Post-Merge CI Repair 2026-10-28
+
+- Post-merge run 40589082838 exposed two issues after the dev-to-main promotion: the committed lockfile retained `flutter: ">=3.44.0"` while Flutter 3.47.8 resolution writes `">=3.47.0"`, and `google_fonts` 8/old Material imports conflicted with Flutter 3.47's split `material_ui` TextTheme types.
+- Repair branch `fix/ci-postmerge` upgrades `google_fonts` to 9.0.0, declares `material_ui ^1.8.0` directly, migrates the Rain app's 74 Material imports to `package:material_ui/material_ui.dart`, and records the exact CI lockfile (`google_fonts 9.0.0`, `material_ui 1.8.0`, Flutter SDK >=3.47.0).
+- Local validation: app analyzer with `--fatal-infos --fatal-warnings`, formatter, and full Rain app tests all pass; app tests are 890 passed and 30 skipped. Ubuntu 26 runner annotations were informational only.
+
 ## UI/UX Level-Up 2026-10-27
 
 - Branch `ui/level-up` (worktree `D:\Rain-uiux`), synced with `dev` at `0772b2a`. Nothing merged into `main` or `dev`. Program: `audit/prompts/rain-uiux-orchestrator.xml`; state and evidence: `audit/ui/STATE.md`; note: [[UI UX Level-Up]].

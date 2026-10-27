@@ -7,7 +7,7 @@
 /// **Depends on:** flutter_test, rain force_update_service, rain_update_prompt_banner
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/presentation/widgets/update/rain_update_prompt_banner.dart';

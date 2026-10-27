@@ -9,7 +9,7 @@
 /// **Depends on:** RainTheme, RainColors
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../performance/rain_motion_policy.dart';
 import '../theme/rain_theme.dart';

@@ -10,7 +10,7 @@
 /// **Depends on:** application/runtime, application/state, presentation/widgets/calls
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
