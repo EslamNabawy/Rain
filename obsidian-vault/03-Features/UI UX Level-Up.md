@@ -53,7 +53,7 @@ Related: [[Branding And UI]], [[Sound System]], [[Frontend Architecture]], [[Fea
 - Handoff: expose a startup retry on `appStartupStateProvider` so the in-app failed phase can offer Try again.
 - Handoff: emit a runtime event for transfer completion so cues can play when the chat is not open.
 - Handoff: relax the pre-31 launch-background release contract if the Rain mark should show on Android 8-11.
-- Button labels use the literal family `'Space Grotesk'`, which google_fonts does not register. Labels likely fall back to the platform font.
+- Fixed 2026-10-27 (`fix/button-font-family`): button, input-label and navigation label styles used the literal family `'Space Grotesk'`, which google_fonts never registers (it loads bundled weights as `SpaceGrotesk_<weight>`), so they fell back to the platform font. They now go through `RainTheme._grotesk` (`GoogleFonts.spaceGrotesk`). Only w500/w600/w700 are bundled, so never request w400 Space Grotesk (it would look for the missing `SpaceGrotesk-Regular.ttf`). `rain_theme_test.dart` pins the families.
 - Owner device checks: Android 11/13 cold start, listen to every cue on speaker/headphones/Windows, feel haptics, reduced-motion walkthrough.
 
 ## Last Updated

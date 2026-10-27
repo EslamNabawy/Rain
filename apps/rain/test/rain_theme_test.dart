@@ -7,6 +7,8 @@
 /// **Depends on:** flutter_test, rain rain_theme, rain_backdrop
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
@@ -150,6 +152,40 @@ void main() {
       }
     },
   );
+
+  test('Space Grotesk styles use bundled google_fonts families', () {
+    // google_fonts registers bundled weights as SpaceGrotesk_<weight> from
+    // assets/google_fonts/SpaceGrotesk-<Weight>.ttf.
+    const bundled = <String, String>{
+      'SpaceGrotesk_500': 'Medium',
+      'SpaceGrotesk_600': 'SemiBold',
+      'SpaceGrotesk_700': 'Bold',
+    };
+    for (final weight in bundled.values) {
+      expect(
+        File('assets/google_fonts/SpaceGrotesk-$weight.ttf').existsSync(),
+        isTrue,
+        reason: weight,
+      );
+    }
+
+    final dark = RainTheme.dark();
+    final light = RainTheme.light();
+    final styles = <TextStyle?>[
+      for (final theme in <ThemeData>[dark, light]) ...<TextStyle?>[
+        theme.filledButtonTheme.style!.textStyle!.resolve(<WidgetState>{}),
+        theme.outlinedButtonTheme.style!.textStyle!.resolve(<WidgetState>{}),
+        theme.textButtonTheme.style!.textStyle!.resolve(<WidgetState>{}),
+        theme.inputDecorationTheme.labelStyle,
+      ],
+      light.navigationBarTheme.labelTextStyle!.resolve(<WidgetState>{}),
+      light.navigationRailTheme.selectedLabelTextStyle,
+      light.navigationRailTheme.unselectedLabelTextStyle,
+    ];
+    for (final style in styles) {
+      expect(bundled.keys, contains(style!.fontFamily));
+    }
+  });
 
   test('buttons show hover, focus and press overlays', () {
     for (final theme in <ThemeData>[RainTheme.dark(), RainTheme.light()]) {

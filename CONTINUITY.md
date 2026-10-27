@@ -4,12 +4,24 @@ This file must survive across future AI sessions.
 
 Every future session must read this file before starting non-trivial work.
 
+## Follow-ups 2026-10-27
+
+- PR #42 merged `dev` into `main` with a merge commit (`dbb2e38`); `main` now carries PR #40 (UI/UX level-up) and PR #41 (CI release pipeline).
+- Dependabot PR #39 fails every CI job at `pub get`: freezed 4.0.3 needs Dart SDK >=3.13.0, newer than CI's Flutter 3.44.0. It also carries the go_router 18, google_fonts 9, melos 8 and open_filex 5 majors. Recommendation: close it, apply minor/patch bumps in a separate PR, then migrate majors one at a time.
+- Branch `fix/button-font-family`: Space Grotesk theme styles (buttons, input labels, navigation labels) now use `GoogleFonts.spaceGrotesk` via `RainTheme._grotesk` instead of the unregistered literal `'Space Grotesk'`. Bundled weights are 500/600/700 only. Theme rebuild equality still holds (TextStyle is value-equal).
+
 ## CI Release Pipeline 2026-10-27
 
 - Branch `ci/release-pipeline` from `dev` @ a12afa3. `ci.yml` is the single test pipeline: push triggers are limited to `dev`, `main` and `v*` tags (pull requests cover feature branches; this ended the double runs). Demo-signed APKs, the Windows folder and a new `Rain-Demo-SHA256SUMS` artifact now also build on push to `main`. A new tag-only `Publish Tag Release` job (the only `contents: write` job) verifies `sha256sum -c` and creates the GitHub Release. Production signing stays in `validated-release.yml` (Remote Config evidence gate).
 - Removed `documentation-vault.yml`, `fast-release.yml` and `tested-build-artifacts.yml`; kept `build-artifacts.yml` and `release.yml`. `release_contract_test.dart` drops the two `fast-release.yml` entries and pins the new CI publish rules. Branch protection is still not configured (owner decision).
 - Security review (security-reviewer agent): no CRITICAL/HIGH. Fixed in 7d551fd: publish-release refuses tags not on main (compare API), `download-artifact` pinned to 9000827 (v8.0.2), required-checks echoes env refs. Open owner decision: a tag ruleset restricting `v*` creation to maintainers.
 - Validation 2026-10-27: manual `CI/CD` run https://github.com/EslamNabawy/Rain/actions/runs/40411155577 on bfd24f8 passed every job (Test Gates, Build EXE and APK Artifacts, Required Checks success; Publish Tag Release skipped as expected without a tag). Artifacts (60-day retention, expire 2026-12-25): `Rain-Demo-Android-Builds` 40.9 MB zip (`Rain-Demo-Android-ARM-v7a-Build.apk` 33,393,058 B, sha256 91e7743a…; `Rain-Demo-Android-ARM-v8-v9-Build.apk` 40,853,562 B, sha256 5d48021b…), `Rain-Demo-Windows-x64-Build` 29.5 MB zip, `Rain-Demo-SHA256SUMS` (77 entries). All three downloaded with `gh run download` and `sha256sum -c SHA256SUMS` passed for all 77 files. Local: protocol_brain tests 300 pass, vault check passed. The tag-release path is not exercised yet (needs a `v*` tag on main).
+
+## Pub Minor Bumps 2026-10-27
+
+- Dependabot PR #39 closed (freezed 4.0.3 needs Dart >=3.13.0; CI pins Flutter 3.44.0). Branch `chore/pub-minor-bumps` from `dev` applies only its minor/patch bumps; see [[Recommended Next Actions]] for the list and the majors left.
+- build_runner 2.17.1 and drift_dev 2.35.2 were dropped from this pass: they need build 5 / analyzer >=13, which freezed 3 forbids.
+- `pubspec.lock` was resolved with local Flutter 3.47.8, then the SDK-pinned `matcher`, `meta`, `test_api` and `vector_math` blocks were restored to the 3.44.0 values. CI's lock-drift check is the authority on whether this matches 3.44.0 exactly.
 
 ## UI/UX Level-Up 2026-10-27
 
