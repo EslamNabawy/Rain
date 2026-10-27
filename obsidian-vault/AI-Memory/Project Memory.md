@@ -542,3 +542,7 @@ No implementation is complete until affected Obsidian vault notes are updated. A
 ## Android build compatibility
 
 - Firebase Auth `6.7.1` requires a Kotlin compiler compatible with metadata `2.4.0`. Rain Android uses Kotlin Gradle plugin `2.4.21` to avoid `:firebase_auth:compileDebugKotlin` failures in CI.
+
+## Verified demo artifact
+
+- Main commit `c7bb8d1` passed the release Hard Gate and produced the published demo pre-release `rain-test-133-1` with both split-ABI APKs. The exact sizes and SHA-256 values are recorded in `CONTINUITY.md`.

@@ -291,3 +291,14 @@ After CI #14 is green and merged: tackle emulator-gated deferred items with a Fi
 - Branch `fix/android-kotlin-2.4` updates `apps/rain/android/settings.gradle.kts` to Kotlin Gradle plugin `2.4.21`.
 - Branch cleanup and final APK verification remain blocked until the repair branch is merged and its complete CI plus Android artifact workflow pass.
 - Main CI run `40597466487` on merge `7a4e9af` passed the required gates and Android Build. Artifact run `40598575213` reached Hard Release Gate but exposed a stale release contract assertion for Kotlin `2.2.20`; the assertion is being updated to `2.4.21` before retrying artifact publication.
+
+## CI/CD and artifact completion 2026-10-28
+
+- PR #63 merged as `7a4e9af0dd9ef5fce4bde2a25959c5e8457e730d`; it aligned the Android Kotlin Gradle plugin with Firebase Auth metadata.
+- PR #64 merged as `c7bb8d19722437580a88bcd163c5953ad41825cf`; it updated the release contract assertion to Kotlin `2.4.21`.
+- Main CI run `40597466487` completed successfully on `7a4e9af`; required analyses, tests, Firebase jobs, Windows Config Check, Obsidian Vault, Test Gates, Required Checks, and Android Build all passed. The downstream combined artifact job remained in progress in the observed run, so the explicit artifact run below is the authoritative artifact verification.
+- Demo artifact run `40599755121` completed successfully on `c7bb8d1`, including Hard Release Gate, Android build, and test pre-release publication.
+- Published pre-release: `rain-test-133-1` (`Rain test build 133.1 (c7bb8d1)`). Artifact bundle: `Rain-Demo-Android-Builds`.
+- `Rain-Demo-Android-ARM-v7a-Build.apk`: 33,661,464 bytes; SHA-256 `73A9571070E3201E5EB0D003A720953A5F0995149D3488239E0DD6AD4D35ADA0`.
+- `Rain-Demo-Android-ARM-v8-v9-Build.apk`: 41,396,940 bytes; SHA-256 `E9EC4D757DA0D0B7057AA21E67B7D6AE47A1E259145BFF92E206F196D8E9077C`.
+- Cleanup deleted only merged feature/dependency branches. Preserved `main`, `dev`, `origin/dependabot/pub/firebase_database-12.6.1` because it is not an ancestor of `main`, the `ci/release-pipeline` worktree, and the active `hopeful-kepler` worktree.

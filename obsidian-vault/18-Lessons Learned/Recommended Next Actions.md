@@ -120,3 +120,7 @@ Tracing overlay progress 2026-08-29: PR1+PR3 of `docs/plans/2026-08-27-rain-trac
 ## Android artifact follow-up 2026-10-28
 
 - Re-run full CI/CD after the Kotlin Gradle plugin compatibility repair, then dispatch the demo Android artifact workflow and verify both ABI APK checksums before deleting merged branches.
+
+## Completed 2026-10-28
+
+- Kotlin compatibility, release-contract validation, full required CI gates, demo APK publication, checksum verification, and safe merged-branch cleanup are complete. Next action: investigate the reported Rain 1.0.8 null-check crash only if reproducible with a concrete stack trace.
