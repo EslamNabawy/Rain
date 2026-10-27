@@ -539,3 +539,6 @@ No implementation is complete until affected Obsidian vault notes are updated. A
 - [[Scenario Coverage Matrix]]
 - [[AI Memory Index]]
 - [[Session Handoff]]
+## Android build compatibility
+
+- Firebase Auth `6.7.1` requires a Kotlin compiler compatible with metadata `2.4.0`. Rain Android uses Kotlin Gradle plugin `2.4.21` to avoid `:firebase_auth:compileDebugKotlin` failures in CI.
