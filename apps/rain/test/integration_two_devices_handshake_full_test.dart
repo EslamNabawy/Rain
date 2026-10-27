@@ -33,13 +33,9 @@ void main() {
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = false;
   });
 
-  test(
-    'Two-device handshake full end-to-end over Firebase emulator',
-    () async {
-      final harness = TwoDeviceHarness();
-      final ok = await harness.run();
-      expect(ok, isTrue);
-    },
-    skip: runIntegrationTests ? null : 'Requires Firebase emulators',
-  );
+  test('Two-device handshake full end-to-end over Firebase emulator', () async {
+    final harness = TwoDeviceHarness();
+    final ok = await harness.run();
+    expect(ok, isTrue);
+  }, skip: runIntegrationTests ? null : 'Requires Firebase emulators');
 }
