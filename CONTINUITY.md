@@ -302,3 +302,14 @@ After CI #14 is green and merged: tackle emulator-gated deferred items with a Fi
 - `Rain-Demo-Android-ARM-v7a-Build.apk`: 33,661,464 bytes; SHA-256 `73A9571070E3201E5EB0D003A720953A5F0995149D3488239E0DD6AD4D35ADA0`.
 - `Rain-Demo-Android-ARM-v8-v9-Build.apk`: 41,396,940 bytes; SHA-256 `E9EC4D757DA0D0B7057AA21E67B7D6AE47A1E259145BFF92E206F196D8E9077C`.
 - Cleanup deleted only merged feature/dependency branches. Preserved `main`, `dev`, `origin/dependabot/pub/firebase_database-12.6.1` because it is not an ancestor of `main`, the `ci/release-pipeline` worktree, and the active `hopeful-kepler` worktree.
+
+## Windows EXE demo release 2026-10-28
+
+- Windows demo workflow `40675869423` completed successfully on main commit `8ffda028d9992577354abb8f48ae5a71841f0967`.
+- Published pre-release: `rain-test-134-1` (`Rain test build 134.1 (8ffda02)`).
+- Artifact: `Rain-Demo-Windows-x64.zip`, 28,719,333 bytes; SHA-256 `3ECC1D14C94DBDF4B44B471BDC5BEF6A2F721E9747FD69F1BA96331E2173850A`.
+
+## Crash investigation 2026-10-28
+
+- The reported `Null check operator used on a null value` on Rain `1.0.8+9` maps to a startup self-reference in `AppBootstrapper`: `firebaseAdapter!` was passed into the pair-cipher resolver while the `FirebaseSignalingAdapter` was still being constructed.
+- The fix constructs the adapter first, then installs the resolver through `setPairCipherResolver`, with a source-level regression contract in `packages/protocol_brain/test/release_contract_test.dart`. Local Dart tooling was unavailable; CI validation is required.

@@ -546,3 +546,5 @@ No implementation is complete until affected Obsidian vault notes are updated. A
 ## Verified demo artifact
 
 - Main commit `c7bb8d1` passed the release Hard Gate and produced the published demo pre-release `rain-test-133-1` with both split-ABI APKs. The exact sizes and SHA-256 values are recorded in `CONTINUITY.md`.
+
+- Main commit `8ffda02` also passed the Windows demo release gate and produced the portable `Rain-Demo-Windows-x64.zip` pre-release asset `rain-test-134-1`.

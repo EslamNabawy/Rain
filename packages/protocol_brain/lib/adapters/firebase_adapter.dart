@@ -63,9 +63,18 @@ class FirebaseSignalingAdapter
   final ConnectionRequestAdapterDiagnosticsSink?
   _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
-  final SignalingCipherResolver? _pairCipherResolver;
+  SignalingCipherResolver? _pairCipherResolver;
   final String? _localUsername;
   final bool _useEmulator;
+
+  /// Installs the pair-cipher resolver after construction.
+  ///
+  /// App bootstrap needs the adapter as an input to the resolver, so this
+  /// setter avoids constructing the adapter through a null self-reference.
+  void setPairCipherResolver(SignalingCipherResolver resolver) {
+    _pairCipherResolver = resolver;
+  }
+
   // F-015 (Phase 1): per-pair cipher cache keyed by peer username. Avoids
   // re-running ECDH on every signaling write; the root key is stable for the
   // life of the friendship.
@@ -168,7 +177,8 @@ class FirebaseSignalingAdapter
     ({String sender, String receiver}) context,
   ) async {
     final localUsername = _effectiveLocalUsername;
-    if (_pairCipherResolver == null || localUsername == null) {
+    final resolver = _pairCipherResolver;
+    if (resolver == null || localUsername == null) {
       return null;
     }
     final normalizedLocal = _normalizedUsername(localUsername);
@@ -180,7 +190,7 @@ class FirebaseSignalingAdapter
     if (cached != null && now - cached.at < _pairCipherTtlMs) {
       return cached.cipher;
     }
-    final resolved = await _pairCipherResolver(peer);
+    final resolved = await resolver(peer);
     if (resolved != null) {
       _pairCipherCache[peer] = (cipher: resolved, at: now);
     } else {
