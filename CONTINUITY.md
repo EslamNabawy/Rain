@@ -313,3 +313,11 @@ After CI #14 is green and merged: tackle emulator-gated deferred items with a Fi
 
 - The reported `Null check operator used on a null value` on Rain `1.0.8+9` maps to a startup self-reference in `AppBootstrapper`: `firebaseAdapter!` was passed into the pair-cipher resolver while the `FirebaseSignalingAdapter` was still being constructed.
 - The fix constructs the adapter first, then installs the resolver through `setPairCipherResolver`, with a source-level regression contract in `packages/protocol_brain/test/release_contract_test.dart`. Local Dart tooling was unavailable; CI validation is required.
+
+## Crash fix and EXE release completion 2026-10-28
+
+- PR #66 merged as `4c8870ba6ff54382253f9591987bfec1c9b14abb` after CI/CD run `40683695068` passed all required checks.
+- Windows demo workflow `40684408184` passed its Hard Release Gate and built the fixed `main` commit `4c8870ba6ff54382253f9591987bfec1c9b14abb`.
+- Published pre-release: `rain-test-135-1` (`Rain test build 135.1 (4c8870b)`).
+- EXE asset: `Rain-Demo-Windows-x64.zip`, 28,818,743 bytes; SHA-256 `A9243B190F342D37546A2D516A69E5275C5080EA49274FF4B785C6C2C46975D1`.
+- Preserve `main`, `dev`, `ci/release-pipeline`, `hopeful-kepler`, and the unmerged Firebase Dependabot branch during cleanup.

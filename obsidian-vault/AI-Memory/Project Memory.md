@@ -548,3 +548,5 @@ No implementation is complete until affected Obsidian vault notes are updated. A
 - Main commit `c7bb8d1` passed the release Hard Gate and produced the published demo pre-release `rain-test-133-1` with both split-ABI APKs. The exact sizes and SHA-256 values are recorded in `CONTINUITY.md`.
 
 - Main commit `8ffda02` also passed the Windows demo release gate and produced the portable `Rain-Demo-Windows-x64.zip` pre-release asset `rain-test-134-1`.
+
+- Main commit `4c8870b` contains the Firebase bootstrap null-check fix from PR #66 and passed the complete release Hard Gate before producing Windows demo pre-release `rain-test-135-1`. The verified `Rain-Demo-Windows-x64.zip` SHA-256 is `A9243B190F342D37546A2D516A69E5275C5080EA49274FF4B785C6C2C46975D1`.
