@@ -321,3 +321,12 @@ After CI #14 is green and merged: tackle emulator-gated deferred items with a Fi
 - Published pre-release: `rain-test-135-1` (`Rain test build 135.1 (4c8870b)`).
 - EXE asset: `Rain-Demo-Windows-x64.zip`, 28,818,743 bytes; SHA-256 `A9243B190F342D37546A2D516A69E5275C5080EA49274FF4B785C6C2C46975D1`.
 - Preserve `main`, `dev`, `ci/release-pipeline`, `hopeful-kepler`, and the unmerged Firebase Dependabot branch during cleanup.
+
+## Android crash-fix release 2026-10-28
+
+- Build number advanced from `1.0.8+9` to `1.0.8+10` so repaired Android installs replace the reported build.
+- Remote Config and the checked-in release manifest now advertise build 10.
+- Android workflow `40689629508` passed the complete Hard Release Gate, including workspace tests, auth lifecycle scenarios, Firebase tests/emulator integration, and Obsidian validation, then verified both ABI APKs.
+- Published pre-release: `rain-test-140-1` for commit `8db5025b369fdf3907057421d5434a98552885b2`.
+- `Rain-Demo-Android-v7a.apk`: 33,890,840 bytes; SHA-256 `94CE4BCB6D38B808AF0203E126531168113A00A9D6AA59273C1AFD32D1B195A6`.
+- `Rain-Demo-Android-v8-v9.apk`: 41,593,548 bytes; SHA-256 `98F0F585604C7A236DB8ECFB9AA40BCE5926F341B0A93C1C1D4111E09FC8ACF2`.

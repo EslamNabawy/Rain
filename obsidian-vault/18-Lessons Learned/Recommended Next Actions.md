@@ -126,3 +126,5 @@ Tracing overlay progress 2026-08-29: PR1+PR3 of `docs/plans/2026-08-27-rain-trac
 - Kotlin compatibility, release-contract validation, full required CI gates, demo APK publication, checksum verification, and safe merged-branch cleanup are complete. Next action: investigate the reported Rain 1.0.8 null-check crash only if reproducible with a concrete stack trace.
 
 - PR #66 fixed the confirmed Firebase adapter self-reference null-check crash. CI run `40683695068` and Windows release run `40684408184` passed; EXE pre-release `rain-test-135-1` was published and checksum-verified. Next action: collect Crashlytics evidence from any remaining 1.0.8+9 reports and add a device smoke test for Firebase bootstrap.
+
+- Android follow-up complete: build `1.0.8+10` passed the full release gate in workflow `40689629508` and both ABI APKs were published as `rain-test-140-1`. Next action: install the matching ABI on the affected device and use the Startup screen’s “Copy details” if the error persists.
