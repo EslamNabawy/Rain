@@ -63,9 +63,17 @@ class FirebaseSignalingAdapter
   final ConnectionRequestAdapterDiagnosticsSink?
   _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
-  final SignalingCipherResolver? _pairCipherResolver;
+  SignalingCipherResolver? _pairCipherResolver;
   final String? _localUsername;
   final bool _useEmulator;
+
+  /// Installs the pair-cipher resolver after construction.
+  ///
+  /// App bootstrap needs the adapter as an input to the resolver, so this
+  /// setter avoids constructing the adapter through a null self-reference.
+  void setPairCipherResolver(SignalingCipherResolver resolver) {
+    _pairCipherResolver = resolver;
+  }
   // F-015 (Phase 1): per-pair cipher cache keyed by peer username. Avoids
   // re-running ECDH on every signaling write; the root key is stable for the
   // life of the friendship.

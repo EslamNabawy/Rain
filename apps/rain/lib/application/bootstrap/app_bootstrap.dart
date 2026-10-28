@@ -95,23 +95,17 @@ class AppBootstrapper {
       final signalingCipher = SignalingCipher.fromKeyMaterial(
         effectiveEnvironment.signalingEncryptionKey,
       );
-      FirebaseSignalingAdapter? firebaseAdapter;
       final rawAdapter = effectiveEnvironment.shouldUseFallbackAdapter
           ? NoopSignalingAdapter()
           : switch (effectiveEnvironment.backend) {
-              RainBackend.firebase =>
-                firebaseAdapter = FirebaseSignalingAdapter(
-                  database: firebaseDatabase!,
-                  signalingCipher: signalingCipher,
-                  pairCipherResolver: buildAppPairCipherResolver(
-                    adapter: firebaseAdapter!,
-                    identityKeys: IdentityKeyRepository(
-                      database,
-                      FlutterSecureStorageKeyStoreService(),
-                    ),
-                    localUsername: () => firebaseAdapter?.signedInUsername,
-                  ),
+              RainBackend.firebase => _buildFirebaseAdapter(
+                database: firebaseDatabase!,
+                signalingCipher: signalingCipher,
+                identityKeys: IdentityKeyRepository(
+                  database,
+                  FlutterSecureStorageKeyStoreService(),
                 ),
+              ),
               RainBackend.noop => NoopSignalingAdapter(),
             };
       final debugLogService = _debugLogService;
@@ -145,6 +139,25 @@ class AppBootstrapper {
       rethrow;
     }
   }
+}
+
+FirebaseSignalingAdapter _buildFirebaseAdapter({
+  required FirebaseDatabase database,
+  required SignalingCipher signalingCipher,
+  required IdentityKeyRepository identityKeys,
+}) {
+  final adapter = FirebaseSignalingAdapter(
+    database: database,
+    signalingCipher: signalingCipher,
+  );
+  adapter.setPairCipherResolver(
+    buildAppPairCipherResolver(
+      adapter: adapter,
+      identityKeys: identityKeys,
+      localUsername: () => adapter.signedInUsername,
+    ),
+  );
+  return adapter;
 }
 
 Future<void> _seedSmokeIdentity({

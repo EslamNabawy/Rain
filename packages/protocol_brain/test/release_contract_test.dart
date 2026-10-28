@@ -301,6 +301,18 @@ void main() {
     expect(manifest, isNot(contains('android.permission.BLUETOOTH_CONNECT')));
   });
 
+  test(
+    'Firebase bootstrap does not self-unwrap the adapter during construction',
+    () {
+      final bootstrap = _repoFile(
+        'apps/rain/lib/application/bootstrap/app_bootstrap.dart',
+      );
+
+      expect(bootstrap, contains('adapter.setPairCipherResolver('));
+      expect(bootstrap, isNot(contains('adapter: firebaseAdapter!')));
+    },
+  );
+
   test('release workflow creates sanitized defines and signing inputs', () {
     final workflow = _repoFile('.github/workflows/release.yml');
 

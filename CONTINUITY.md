@@ -308,3 +308,8 @@ After CI #14 is green and merged: tackle emulator-gated deferred items with a Fi
 - Windows demo workflow `40675869423` completed successfully on main commit `8ffda028d9992577354abb8f48ae5a71841f0967`.
 - Published pre-release: `rain-test-134-1` (`Rain test build 134.1 (8ffda02)`).
 - Artifact: `Rain-Demo-Windows-x64.zip`, 28,719,333 bytes; SHA-256 `3ECC1D14C94DBDF4B44B471BDC5BEF6A2F721E9747FD69F1BA96331E2173850A`.
+
+## Crash investigation 2026-10-28
+
+- The reported `Null check operator used on a null value` on Rain `1.0.8+9` maps to a startup self-reference in `AppBootstrapper`: `firebaseAdapter!` was passed into the pair-cipher resolver while the `FirebaseSignalingAdapter` was still being constructed.
+- The fix constructs the adapter first, then installs the resolver through `setPairCipherResolver`, with a source-level regression contract in `packages/protocol_brain/test/release_contract_test.dart`. Local Dart tooling was unavailable; CI validation is required.
