@@ -176,7 +176,8 @@ class FirebaseSignalingAdapter
     ({String sender, String receiver}) context,
   ) async {
     final localUsername = _effectiveLocalUsername;
-    if (_pairCipherResolver == null || localUsername == null) {
+    final resolver = _pairCipherResolver;
+    if (resolver == null || localUsername == null) {
       return null;
     }
     final normalizedLocal = _normalizedUsername(localUsername);
@@ -188,7 +189,7 @@ class FirebaseSignalingAdapter
     if (cached != null && now - cached.at < _pairCipherTtlMs) {
       return cached.cipher;
     }
-    final resolved = await _pairCipherResolver(peer);
+    final resolved = await resolver(peer);
     if (resolved != null) {
       _pairCipherCache[peer] = (cipher: resolved, at: now);
     } else {
