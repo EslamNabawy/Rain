@@ -74,6 +74,7 @@ class FirebaseSignalingAdapter
   void setPairCipherResolver(SignalingCipherResolver resolver) {
     _pairCipherResolver = resolver;
   }
+
   // F-015 (Phase 1): per-pair cipher cache keyed by peer username. Avoids
   // re-running ECDH on every signaling write; the root key is stable for the
   // life of the friendship.
