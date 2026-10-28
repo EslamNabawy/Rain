@@ -1,7 +1,7 @@
 name: rain
 description: Rain peer-to-peer chat application.
 publish_to: none
-version: 1.0.8+9
+version: 1.0.8+10
 
 environment:
   sdk: ^3.10.4
