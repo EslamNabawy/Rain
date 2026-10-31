@@ -94,6 +94,8 @@ Audit hardening 2026-10-10 (branch `audit/rain-hardening`, files `audit/01-findi
 
 Release follow-up 2026-10-31: the validated demo release is published as `rain-validated-16-1` after the Firebase Functions audit gate was repaired. Next release work should promote the dependency remediation to the maintained release branch, then repeat production-signing and real-device proof separately from the Spark/free-tier demo release.
 
+Windows startup follow-up 2026-10-31: publish build `1.0.8+10` containing the idempotent v7 identity migration before asking users on `1.0.8+9` to retry. Preserve affected local databases; the migration now repairs them without data deletion.
+
 ## Do Not Prioritize Yet
 
 - Broad visual redesign before call state ownership is stable.

@@ -285,3 +285,9 @@ After CI #14 is green and merged: tackle emulator-gated deferred items with a Fi
 - Commit `7b8b8b7` on branch `codex/release-fix` added patched `glob`, `minimatch`, and `rimraf` overrides and regenerated `backend/firebase/functions/package-lock.json`. Local `npm ci`, lint, 37 tests, and `npm audit --omit=dev --audit-level=moderate` passed with zero vulnerabilities.
 - Validated release run `41224020978` passed workflow lint, Dart formatting, workspace analyze/tests, Firebase backend lint/audit/tests, emulator integration, vault validation, Android ABI verification, Windows runtime verification, and required checks.
 - Published demo pre-release: `rain-validated-16-1` with APKs, Windows ZIP, metadata, and generated release notes. Release URL: https://github.com/EslamNabawy/Rain/releases/tag/rain-validated-16-1
+
+## Windows Startup Migration Fix 2026-10-31
+
+- The `Rain 1.0.8+9` Windows release could strand an existing local database during the v6-to-v7 Drift migration when `identity_table.signing_public_key` already existed but `PRAGMA user_version` was still 6. The old migration attempted a duplicate `ALTER TABLE` and surfaced only the generic startup failure.
+- Commit `a271488` makes the v7 migration idempotent, adds startup failure logging, and adds a regression test for the partial-migration shape. `packages/rain_core/test/rain_database_test.dart` and `apps/rain/test/runtime_startup_test.dart` both pass in the release worktree.
+- The corrected client build is `1.0.8+10`; publish a new Windows/APK release before asking affected users to retry. Do not delete local app data as the workaround.

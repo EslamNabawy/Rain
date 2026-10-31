@@ -170,3 +170,11 @@ Related: [[CI-CD Roadmap]], [[Production Readiness]].
 - Published release: https://github.com/EslamNabawy/Rain/releases/tag/rain-validated-16-1
 - Published assets: `Rain-Demo-Android-v7a.apk`, `Rain-Demo-Android-v8-v9.apk`, `Rain-Demo-Windows-x64.zip`, `rain-release-metadata.json`.
 - Security remediation: Firebase Functions dependency audit initially failed on the `dev` commit; commit `7b8b8b7` patched the transitive `glob`/`minimatch`/`rimraf` ranges and cleared the audit.
+
+### 2026-10-31 Windows Startup Regression Fix
+
+- Affected release: `1.0.8+9`.
+- Failure: stale schema version plus existing `identity_table.signing_public_key` caused a duplicate-column migration failure on Windows.
+- Fix commit: `a271488`.
+- Regression checks: `packages/rain_core/test/rain_database_test.dart` and `apps/rain/test/runtime_startup_test.dart` passed.
+- Corrected client build: `1.0.8+10`.

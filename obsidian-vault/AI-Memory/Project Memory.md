@@ -542,4 +542,9 @@ No implementation is complete until affected Obsidian vault notes are updated. A
 
 - The validated demo release workflow now passes the Firebase Functions moderate audit after constraining `glob` to the patched `14.0.3` range and adding patched `minimatch`/`rimraf` overrides; the lockfile was regenerated and `npm audit --omit=dev --audit-level=moderate` reports zero vulnerabilities.
 - GitHub Actions run `41224020978` passed all validation, Android, Windows, and publication jobs from commit `7b8b8b7` and published pre-release `rain-validated-16-1`.
+
+## Windows Startup Regression 2026-10-31
+
+- `Rain 1.0.8+9` could fail on Windows during the v6-to-v7 Drift migration when `signing_public_key` was already present but the persisted schema version was stale. The corrected migration checks both table and column existence before adding the column.
+- The fix is committed on the release branch as `a271488`, with a regression test and startup failure logging. The next client build is `1.0.8+10`.
 - [[Session Handoff]]
