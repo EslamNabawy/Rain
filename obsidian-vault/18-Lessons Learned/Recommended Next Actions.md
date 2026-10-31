@@ -2,6 +2,11 @@
 
 Last updated: 2026-10-28
 
+## 2026-10-31 Windows startup fix follow-up
+
+- Completed: publish and distribute `rain-validated-19-1` (`1.0.8+10`) and deploy Remote Config version 10.
+- Next: verify one installed `1.0.8+9` Windows client receives the required update prompt against live Remote Config, then verify the corrected client opens the existing database without data deletion.
+
 ## Purpose
 
 This note continuously converts current project state, risks, debt, lessons, and metrics into recommended next actions.

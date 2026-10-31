@@ -178,3 +178,11 @@ Related: [[CI-CD Roadmap]], [[Production Readiness]].
 - Fix commit: `a271488`.
 - Regression checks: `packages/rain_core/test/rain_database_test.dart` and `apps/rain/test/runtime_startup_test.dart` passed.
 - Corrected client build: `1.0.8+10`.
+
+### 2026-10-31 Corrected Release Published
+
+- Workflow run: https://github.com/EslamNabawy/Rain/actions/runs/41232561616
+- Commit: `392f2c47421e50c063e5ed9953bc7e213b3acab7`
+- Published pre-release: https://github.com/EslamNabawy/Rain/releases/tag/rain-validated-19-1
+- Assets: `Rain-Demo-Android-v7a.apk`, `Rain-Demo-Android-v8-v9.apk`, `Rain-Demo-Windows-x64.zip`, `rain-release-metadata.json`.
+- Live Remote Config version `10` was deployed and read back with stable/demo Android/Windows `latestBuild` and `minimumBuild` set to `10`.

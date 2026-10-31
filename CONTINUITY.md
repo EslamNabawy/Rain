@@ -286,6 +286,12 @@ After CI #14 is green and merged: tackle emulator-gated deferred items with a Fi
 - Validated release run `41224020978` passed workflow lint, Dart formatting, workspace analyze/tests, Firebase backend lint/audit/tests, emulator integration, vault validation, Android ABI verification, Windows runtime verification, and required checks.
 - Published demo pre-release: `rain-validated-16-1` with APKs, Windows ZIP, metadata, and generated release notes. Release URL: https://github.com/EslamNabawy/Rain/releases/tag/rain-validated-16-1
 
+## Corrected Release Published 2026-10-31
+
+- Validated release run `41232561616` passed all gates and published pre-release `rain-validated-19-1` from commit `392f2c4`, including Android v7a/v8-v9 APKs, Windows x64 ZIP, and release metadata.
+- Live Firebase Remote Config version `10` now advertises `1.0.8+10` as the minimum/current build for stable and demo Android/Windows channels. Existing local databases do not need to be deleted.
+- Release-page proof and targeted migration/startup/version tests passed; Obsidian vault validation passed.
+
 ## Windows Startup Migration Fix 2026-10-31
 
 - The `Rain 1.0.8+9` Windows release could strand an existing local database during the v6-to-v7 Drift migration when `identity_table.signing_public_key` already existed but `PRAGMA user_version` was still 6. The old migration attempted a duplicate `ALTER TABLE` and surfaced only the generic startup failure.
