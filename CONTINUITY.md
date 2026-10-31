@@ -2,6 +2,17 @@
 
 This file must survive across future AI sessions.
 
+## Startup Failure Observability & v7 Migration Idempotency 2026-10-31
+
+- A Windows debug launch showed the generic "Something went wrong. Try again." screen with zero diagnostics: the `AppStartupPhase.failed` transitions in `appStartupStateProvider` were never logged. `apps/rain/lib/application/state/app_startup_state.dart` now records every failure through `_logStartupFailure` (error, stack trace, failure source, phase; identity-deduplicated so a steady screen does not spam the log).
+- Using the new diagnostics, the actual cause was identified from the user's real local database: `SqliteException(1): duplicate column name: signing_public_key` on `ALTER TABLE "identity_table" ADD COLUMN ...`. The v6→v7 migration guarded only on table existence; a database stored at schema version < 7 that already contains the column (e.g. an earlier open that advanced schema but never persisted `PRAGMA user_version`, or a partially applied migration) threw and mapped to an identity startup failure.
+- Fixed in `packages/rain_core/lib/database/rain_database.dart`: the `from < 7` step now also requires `!await _hasColumn('identity_table', 'signing_public_key')`, matching the idempotent pattern of the v2-v4 column steps. Existing databases stuck at version < 7 migrate cleanly; no data loss; no manual cleanup needed.
+- Test: `packages/rain_core/test/rain_database_test.dart` adds "migration skips already-added identity signing_public_key column", which builds a legacy v6 database that already carries the column and asserts open succeeds, the column exists exactly once, and `PRAGMA user_version` ends at 7.
+- Windows live verification: with the fix, a fresh debug build launched on the previously failing profile, migration completed, no `app_startup_state` failure was recorded, and the app reached its Firebase network operations. This closes the debug "Something went wrong" regression.
+- Validation: `dart run melos run analyze` SUCCESS (5 packages); `dart run melos run test` SUCCESS across the workspace. Vault validator re-run.
+
+Every future session must read this file before starting non-trivial work.
+
 ## Release Guard Reconciliation & Gradle JDK Hygiene 2026-10-31
 
 - Audit found that the documented "Windows EXE No-Defines Compatibility" behavior had regressed out of the code: `AppEnvironment.validateForRelease()` threw for a plain no-defines Windows release even though CONTINUITY and Project Memory said the local Windows path accepts the bundled development key.

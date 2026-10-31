@@ -2,6 +2,12 @@
 
 Last updated: 2026-10-31
 
+## 2026-10-31 Database migration idempotency and startup failure logging
+
+Rain database migrations must be idempotent: every schema step guarded only by version (`from < N`) can run against a database whose stored `PRAGMA user_version` lags its actual schema (previously possible when an open advanced schema but failed before persisting the version). The v6→v7 `signing_public_key` ADD COLUMN threw `duplicate column name` on such databases and stranded the app on the generic startup failure screen; it now checks column existence like the v2-v4 steps. New schema steps must follow this pattern: guard on column/table existence, never version alone.
+
+`AppStartupPhase.failed` transitions are now logged through `RainDebugLog` (`source: app_startup_state`, failure source + phase) and `last_crash.json` remains reserved for fatal bootstrap errors. The generic failure screen texts are intentional: real error details live in diagnostics and the "Copy details" button.
+
 ## 2026-10-30 Android toolchain repair
 
 Rain Android debug builds require NDK `28.2.13676358`, JDK 21 with the current Gradle 9.1 wrapper, and Kotlin Gradle Plugin `2.4.21` because resolved Firebase Auth artifacts carry Kotlin metadata 2.4.0. An empty `ANDROID_PREFS_ROOT` property caused a missing project-local debug keystore lookup and must remain absent. The debug APK now builds successfully.

@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'core_providers.dart';
@@ -181,17 +182,42 @@ class AppStartupState {
       : null;
 }
 
+/// Last startup failure logged from [appStartupStateProvider]. Comparing by
+/// identity keeps a tame failure from being re-logged every time the provider
+/// recomputes while the failure screen is visible.
+Object? _lastLoggedStartupFailure;
+
+void _logStartupFailure(AppStartupState state) {
+  final Object error = state.error!;
+  if (identical(_lastLoggedStartupFailure, error)) {
+    return;
+  }
+  _lastLoggedStartupFailure = error;
+  RainDebugLog.error(
+    error,
+    state.stackTrace,
+    source: 'app_startup_state',
+    fatal: false,
+    context: <String, Object?>{
+      'failureSource': state.failureSource?.name,
+      'phase': state.phase.name,
+    },
+  );
+}
+
 final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
   final networkStatus = ref.watch(networkStatusProvider).value;
   final forceUpdate = ref.watch(forceUpdateProvider);
   if (!forceUpdate.hasValue) {
     if (forceUpdate.hasError) {
-      return AppStartupState.failed(
+      final AppStartupState failureState = AppStartupState.failed(
         error: forceUpdate.error!,
         stackTrace: forceUpdate.stackTrace,
         failureSource: AppStartupFailureSource.forceUpdate,
         networkStatus: networkStatus,
       );
+      _logStartupFailure(failureState);
+      return failureState;
     }
     return AppStartupState.checkingUpdate(networkStatus: networkStatus);
   }
@@ -217,13 +243,15 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
           networkStatus: networkStatus,
         );
       }
-      return AppStartupState.failed(
+      final AppStartupState failureState = AppStartupState.failed(
         error: identity.error!,
         stackTrace: identity.stackTrace,
         failureSource: AppStartupFailureSource.identity,
         updateResult: updateResult,
         networkStatus: networkStatus,
       );
+      _logStartupFailure(failureState);
+      return failureState;
     }
     return AppStartupState.validatingSession(
       updateResult: updateResult,
@@ -267,7 +295,7 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
         networkStatus: networkStatus,
       );
     }
-    return AppStartupState.failed(
+    final AppStartupState failureState = AppStartupState.failed(
       error: error,
       stackTrace: runtime.stackTrace,
       failureSource: AppStartupFailureSource.runtime,
@@ -275,6 +303,8 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
       identity: currentIdentity,
       networkStatus: networkStatus,
     );
+    _logStartupFailure(failureState);
+    return failureState;
   }
   if (runtime.isLoading) {
     return AppStartupState.startingRuntime(
