@@ -151,57 +151,61 @@ void main() {
     );
   });
 
-  test('migration skips already-added identity signing_public_key column', () async {
-    final tempDir = Directory.systemTemp.createTempSync(
-      'rain_db_identity_migration_test_',
-    );
-    addTearDown(() {
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
-    });
+  test(
+    'migration skips already-added identity signing_public_key column',
+    () async {
+      final tempDir = Directory.systemTemp.createTempSync(
+        'rain_db_identity_migration_test_',
+      );
+      addTearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
 
-    final file = File(p.join(tempDir.path, 'rain.sqlite'));
-    final legacy = NativeDatabase(file);
-    await legacy.ensureOpen(_LegacyExecutor());
-    await legacy.runCustom(
-      'CREATE TABLE identity_table ('
-      'id INTEGER PRIMARY KEY AUTOINCREMENT, '
-      'username TEXT NOT NULL, '
-      'display_name TEXT NOT NULL, '
-      'created_at INTEGER NOT NULL, '
-      'gender TEXT NULL, '
-      'signing_public_key TEXT NULL'
-      ');',
-    );
-    // Schema content is already at v7 (the column exists), but the persisted
-    // user_version says 6 — the state that made ALTER TABLE ... ADD COLUMN
-    // throw "duplicate column name" and strand the app on the startup
-    // failure screen.
-    await legacy.runCustom('PRAGMA user_version = 6;');
-    await legacy.close();
+      final file = File(p.join(tempDir.path, 'rain.sqlite'));
+      final legacy = NativeDatabase(file);
+      await legacy.ensureOpen(_LegacyExecutor());
+      await legacy.runCustom(
+        'CREATE TABLE identity_table ('
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+        'username TEXT NOT NULL, '
+        'display_name TEXT NOT NULL, '
+        'created_at INTEGER NOT NULL, '
+        'gender TEXT NULL, '
+        'signing_public_key TEXT NULL'
+        ');',
+      );
+      // Schema content is already at v7 (the column exists), but the persisted
+      // user_version says 6 — the state that made ALTER TABLE ... ADD COLUMN
+      // throw "duplicate column name" and strand the app on the startup
+      // failure screen.
+      await legacy.runCustom('PRAGMA user_version = 6;');
+      await legacy.close();
 
-    final database = RainDatabase(
-      NativeDatabase(file, setup: configureRainSqliteConnection),
-    );
-    addTearDown(database.close);
+      final database = RainDatabase(
+        NativeDatabase(file, setup: configureRainSqliteConnection),
+      );
+      addTearDown(database.close);
 
-    final columns = await database
-        .customSelect('PRAGMA table_info(identity_table);')
-        .get();
-    final columnNames = columns.map((row) => row.data['name']).toList();
+      final columns = await database
+          .customSelect('PRAGMA table_info(identity_table);')
+          .get();
+      final columnNames = columns.map((row) => row.data['name']).toList();
 
-    expect(columnNames, contains('signing_public_key'));
-    expect(
-      columnNames.where((name) => name == 'signing_public_key').length,
-      1,
-      reason: 'the v7 migration must not duplicate the signing_public_key column',
-    );
-    expect(
-      await database.customSelect('PRAGMA user_version;').getSingle(),
-      isA<QueryRow>().having((row) => row.data.values.single, 'version', 7),
-    );
-  });
+      expect(columnNames, contains('signing_public_key'));
+      expect(
+        columnNames.where((name) => name == 'signing_public_key').length,
+        1,
+        reason:
+            'the v7 migration must not duplicate the signing_public_key column',
+      );
+      expect(
+        await database.customSelect('PRAGMA user_version;').getSingle(),
+        isA<QueryRow>().having((row) => row.data.values.single, 'version', 7),
+      );
+    },
+  );
 
   test('schema v6 creates explicit scalability indexes', () async {
     final database = RainDatabase(NativeDatabase.memory());
