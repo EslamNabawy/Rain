@@ -199,10 +199,15 @@ class RainDatabase extends _$RainDatabase {
         await _createScalabilityIndexes();
       }
       // TASK-015: add the identity signing public key column (nullable).
-      // Guard on table existence: very old schemas (test fixtures / pre-identity
-      // installs) may not have identity_table yet; createAll/onCreate handles it
-      // for fresh DBs, and normal migrations reach this step with the table present.
-      if (from < 7 && await _hasTable('identity_table')) {
+      // Guard on table existence AND column existence: a database stored at
+      // schema version < 7 may already contain the column (e.g. an earlier
+      // open failed before persisting the new version, or a partially applied
+      // migration). The earlier idempotent steps use the same column-existence
+      // pattern; without the guard the ALTER throws "duplicate column name"
+      // and strands the app on the generic startup-failure screen.
+      if (from < 7 &&
+          await _hasTable('identity_table') &&
+          !await _hasColumn('identity_table', 'signing_public_key')) {
         await m.addColumn(identityTable, identityTable.signingPublicKey);
       }
     },
