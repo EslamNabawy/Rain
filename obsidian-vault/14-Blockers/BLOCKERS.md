@@ -1,6 +1,6 @@
 # BLOCKERS
 
-Last updated: 2026-10-10
+Last updated: 2026-10-31
 
 ## Purpose
 
@@ -368,6 +368,24 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Exit Criteria: Firebase-enabled Windows Release EXE launches, remains alive for the smoke window, reaches the sign-in surface, and produces no non-platform-thread warnings or native crash.
 - Detection Strategy: `flutter build windows --release` with Firebase defines followed by direct EXE launch, process-liveness check, Windows application crash log review, and Firebase listener smoke.
 - Evidence: Firebase Debug build and 10-second direct EXE smoke passed; Flutter run reached the VM service without the RTDB thread warning; Firebase Release build and 10-second direct EXE smoke passed.
+
+### BLK-015: Live RTDB Rules Are Presumed Stale And Deny v=2 Signaling
+
+- Status: Open
+- Severity: High
+- Owner: Engineering (deploy requires Firebase project owner login)
+- Type: Operational / Backend
+- Related Risks: R-014, R-021
+- Related Roadmap Tasks: signaling envelope v=2 migration, peer connect/call reliability
+- Related Debt: TD-021
+- Impact: Users connecting to new peers on the live backend fail with `Peer signaling data could not be written: permission-denied` while the app is healthy: the current client writes salt-carrying v=2 signaling envelopes, and rules deployed from the 2026-06-07 era validate `v===1` only.
+- Current mitigation: None on the live backend; the failure does not corrupt data (writes are denied atomically) and retry after rules deploy resolves it.
+- Workaround Strategy: Owner deploys the checked-in rules from `backend/firebase` (`firebase deploy --project rain-8fb4b --only database`) and the app is used normally; no app-side workaround exists because v=1 envelopes are no longer produced.
+- Parallel Progress Path: Emulator rules proof, signaling adapter tests, app feature work, and vault updates continue independently; only live cross-device connect/call verification depends on the deploy.
+- Resolution Plan: Owner performs `firebase login`, deploys `--only database`, reads back live rules via `GET https://rain-8fb4b-default-rtdb.firebaseio.com/.settings/rules.json` with an owner bearer token (`firebase-tools 15.18.0` has no `database:rules:get`), records the readback as release-gate evidence, then retries the real connect to `@nourr`.
+- Exit Criteria: Live rules contain the `v===1 || v===2` salt-gate validations matching `backend/firebase/database.rules.json` at HEAD, a real authenticated connect to `@nourr` completes without permission-denied diagnostics, and a future diagnostics export records no signaling write failures.
+- Detection Strategy: After every rules-relevant change, run `backend/firebase/rules-test` harness locally and require a deploy + readback note before marking signaling work done; monitor diagnostics for permission-denied signaling writes as a stale-rules signal.
+- Evidence: 2026-10-31 local emulator two-sided proof: checked-in rules pass 21/21 (v=1 and v=2+salt envelopes for rooms and voice calls); June-era rules snapshot rejects per-candidate ICE writes unless `v===1` and `$other:false` forbids `salt` (permission_denied for caller and callee with and without salt, v=1 succeeds). Last live deploy/readback evidence: 2026-06-07.
 
 ## Blocker Review Cadence
 

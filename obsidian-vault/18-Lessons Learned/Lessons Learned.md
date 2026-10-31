@@ -736,6 +736,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: DevOps/Engineering
 - Status: Open
 
+### LESSON-20261031-044: Live Rules Lack Readback Proof And DenyClientSignaling
+
+- Date: 2026-10-31
+- Related task: User-reported live connect failure to `@nourr` with `Peer signaling data could not be written: permission-denied`.
+- Related system: [[Rules Strategy]], [[Emulator Coverage]], signaling ICE transport.
+- Related risk/debt: R-014, R-021, TD-021, BLK-015.
+- What was learned: RTDB rules deployment is manual and the last recorded live deploy/readback was 2026-06-07. Meanwhile the repo rules moved 2026-10-10 to accept `v===1 || v===2` (salt <= 64) signaling envelopes while the client now publishes v=2 salt envelopes. A live rules that references the June state rejects every v=2 ICE write with permission denied, which surfaces only as the peer-visible connect failure.
+- What caused delays: The app error message (generic permission-denied on the signaling push) gave no hint that the deployment was the moving part; the connection between client envelope version and deployed rules validation has no runtime evidence trail.
+- What succeeded: Two-sided local emulator proof with `firebase-tools 15.18.0`: checked-in rules pass the 21-test harness including v=2+salt; a June rules snapshot rejects per-candidate ICE writes unless `v===1` and `$other:false` forbids the extra `salt` key, reproducing the exact permission-denied behavior for caller and callee.
+- What should change: Any signaling envelope shape change (or rules schema change) must be accompanied by a live rules deploy + readback evidence note, and the signaling adapter should record the deployed-rules shape failure distinctly (e.g. diagnostics include the rules drift hint when a v=2 write is denied but the checked-in rules accept it).
+- Pattern: Backend lifecycle bugs need both code proof and deployed-rule proof; a versioned envelope requires a versioned deployed validation.
+- Follow-up improvement: Add a release-gate readback artifact for RTDB rules, mirroring the Remote Config evidence pattern, and keep `firebase-tools` pinned in the toolkit documentation.
+- Owner: Engineering/DevOps
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

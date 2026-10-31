@@ -2,7 +2,19 @@
 
 This file must survive across future AI sessions.
 
-## Startup Failure Observability & v7 Migration Idempotency 2026-10-31
+## Live RTDB Rules Drift Denies v=2 Signaling 2026-10-31
+
+- User-reported live failure: connecting to `@nourr` fails with `Peer signaling data could not be written: permission-denied`, thrown by `_handleLocalIceWriteError` in `packages/protocol_brain/lib/mind/protocol_brain_impl.dart` when the ICE push to `rooms/$roomId/callerICE|calleeICE` is rejected.
+- The current client writes salt-carrying v=2 signaling envelopes. The repo rules (`backend/firebase/database.rules.json`, changed 2026-10-10 in `bbf43de`/`53bfab4`/`d9d279d`/`3c3b64c`) accept `v===1 || v===2` with `salt` (string <= 64) for all signaling nodes.
+- The last live rules deploy/readback evidence is 2026-06-07 (commit `1535270` era). `git diff 1535270..HEAD` on `database.rules.json` shows the signaling validates were upgraded from `v===1` only to also accept v=2 + salt. Deployment is manual per `backend/firebase/README.md`; no live readback has been recorded since.
+- Local emulator proof (both sides, `firebase-tools 15.18.0` + `backend/firebase/rules-test/run.js` harness): (1) checked-in rules pass 21/21, explicitly accepting v=1 and v=2+salt room and voice-call envelopes; (2) June-era rules snapshot (`git show 1535270:backend/firebase/database.rules.json`) rejects v=2 ICE writes: per-candidate validates require `v===1` exactly and `$other:false` rejects the `salt` field — v=2 with salt fails `permission_denied` for both caller and callee roles, v=2 without salt also fails, v=1 still succeeds. This reproduces the user-reported error exactly.
+- Root cause: live RTDB rules are presumed stale (June state); the client's v=2 envelope writes are denied. not an app bug. Secondary possibility (unproven): a stale `security/blockedUids/{uid}` row denies all writes — checked only after rules deploy if the connect retry still fails.
+- Required owner action (cannot be automated from this machine; needs Firebase owner login): from `backend/firebase`, `firebase deploy --project rain-8fb4b --only database`. Verify: retry the connect to `@nourr` in the live app (GoRouter connect flow) and confirm no permission-denied diagnostics; optionally read back live rules via `GET https://rain-8fb4b-default-rtdb.firebaseio.com/.settings/rules.json` with an owner bearer token (`firebase-tools 15.18.0` has no `database:rules:get`).
+- Proof artifacts were transient (june.rules.json snapshot, june-proof.js, dump-ice.js) and were deleted after capture; the durable artifact is `backend/firebase/rules-test/run.js`. To reproduce the stale side, checkout the June rules into a temp snapshot and point a copy of the harness at it.
+- Validation: `firebase emulators:exec --project rain-8fb4b --only database --non-interactive "node rules-test/run.js"` passed 21/21. Vault validator re-run. Branch state at session end: local `dev` at `42903b8` + this docs commit, ahead 3 / behind 29 vs `origin/dev`; do not pull blindly.
+
+Every future session must read this file before starting non-trivial work.
+
 
 - A Windows debug launch showed the generic "Something went wrong. Try again." screen with zero diagnostics: the `AppStartupPhase.failed` transitions in `appStartupStateProvider` were never logged. `apps/rain/lib/application/state/app_startup_state.dart` now records every failure through `_logStartupFailure` (error, stack trace, failure source, phase; identity-deduplicated so a steady screen does not spam the log).
 - Using the new diagnostics, the actual cause was identified from the user's real local database: `SqliteException(1): duplicate column name: signing_public_key` on `ALTER TABLE "identity_table" ADD COLUMN ...`. The v6→v7 migration guarded only on table existence; a database stored at schema version < 7 that already contains the column (e.g. an earlier open that advanced schema but never persisted `PRAGMA user_version`, or a partially applied migration) threw and mapped to an identity startup failure.
