@@ -2,6 +2,10 @@
 
 Last updated: 2026-06-08
 
+## Windows Debug backend safety boundary (2026-10-29)
+
+Rain vendors a repo-owned `firebase_database 13.0.1` fork for Windows. Its RTDB listener callbacks are queued to the runner's platform-thread window dispatcher, with shutdown guards; Firebase is the normal Windows backend and noop remains explicit offline/test mode only.
+
 ## Purpose
 
 This note is the Phase 2 repository discovery snapshot. It documents the current system structure without prescribing refactors.
@@ -297,7 +301,7 @@ Main app dependencies discovered from `apps/rain/pubspec.yaml`:
 4. `CrashDiagnosticsService` initializes and installs global handlers.
 5. `CrashDiagnosticsDebugLogService` optionally enables debug/demo logging.
 6. `DesktopShellController` initializes desktop window shell behavior.
-7. `AppBootstrapper.bootstrap()` creates `RainDatabase`, initializes Firebase when enabled, creates signaling cipher, selects Firebase or noop adapter, wraps adapter with debug logging, creates `ForceUpdateService`, and optionally seeds smoke identity.
+7. `AppBootstrapper.bootstrap()` creates `RainDatabase`, initializes Firebase when enabled, creates the signaling cipher, constructs the Firebase adapter before configuring its self-referential pair-cipher resolver, selects Firebase or noop adapter, wraps the adapter with debug logging, creates `ForceUpdateService`, and optionally seeds smoke identity.
 8. `ProviderScope` receives bootstrap overrides and starts `RainApp`.
 9. `AppStartupState` composes Remote Config update status, validated local/backend identity, runtime startup, session-expired reset, failed, and ready phases.
 10. `RainApp` owns the global startup surface. While `AppStartupState.usesRoutedAppShell` is false, `MaterialApp.router.builder` prevents the normal shell from rendering. Loading, required-update, failed, and session-expired states render `RainStartupSurface`; signed-out auth renders through a standalone Navigator/Overlay.

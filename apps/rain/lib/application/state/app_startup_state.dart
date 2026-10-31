@@ -197,6 +197,7 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
   }
 
   final updateResult = forceUpdate.requireValue;
+  final environment = ref.watch(appEnvironmentProvider);
   if (updateResult.requiresUpdate) {
     return AppStartupState.updateRequired(
       updateResult: updateResult,
@@ -207,6 +208,15 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
   final identity = ref.watch(identityProvider);
   if (!identity.hasValue) {
     if (identity.hasError) {
+      // The Windows local adapter intentionally has no Firebase session. A
+      // cached Firebase identity from an older run must not strand the app on
+      // the generic startup-failure screen; discard it and show onboarding.
+      if (environment.shouldUseFallbackAdapter) {
+        return AppStartupState.signedOut(
+          updateResult: updateResult,
+          networkStatus: networkStatus,
+        );
+      }
       return AppStartupState.failed(
         error: identity.error!,
         stackTrace: identity.stackTrace,

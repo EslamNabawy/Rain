@@ -1,0 +1,23 @@
+# Copyright 2021 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# in the LICENSE file.
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+  errors:
+    constant_identifier_names: ignore
+    no_leading_underscores_for_local_identifiers: ignore
+    prefer_const_constructors_in_immutables: ignore
+    prefer_final_fields: ignore
+    use_super_parameters: ignore
+include: ../../analysis_options.yaml
+linter:
+  rules:
+    public_member_api_docs: true

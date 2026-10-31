@@ -1,6 +1,36 @@
 ﻿# Project Memory
 
-Last updated: 2026-10-11
+Last updated: 2026-10-31
+
+## 2026-10-30 Android toolchain repair
+
+Rain Android debug builds require NDK `28.2.13676358`, JDK 21 with the current Gradle 9.1 wrapper, and Kotlin Gradle Plugin `2.4.21` because resolved Firebase Auth artifacts carry Kotlin metadata 2.4.0. An empty `ANDROID_PREFS_ROOT` property caused a missing project-local debug keystore lookup and must remain absent. The debug APK now builds successfully.
+
+The Android toolchain is now Gradle `9.1.0` with AGP `9.0.1`. Legacy Kotlin compatibility remains enabled because resolved Firebase, Cloud Functions, and WebRTC Flutter plugins still apply the Kotlin Gradle Plugin; this is the only remaining Flutter toolchain warning.
+
+Windows release bootstrap now validates Firebase Database initialization before creating the signaling adapter. This replaces an opaque null-check crash in older executables with an explicit startup error and requires distributing a freshly rebuilt release executable.
+
+Windows production release artifacts must embed a non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`; local stable test artifacts are built with `scripts/build_stable_test_pair.ps1`, which generates that key. The complete Windows Release bundle must be distributed together.
+
+Locally built Windows release EXEs without Dart defines preserve the historical startup behavior using the bundled development key. This path is implemented in code as `AppEnvironment.allowsLocalWindowsDevKeyRelease`, gated by `kReleaseMode` + `TargetPlatform.windows` + no provided key + exactly the bundled dev key, and checked by `AppEnvironment.validateForRelease()`; contract tests in `app_environment_test.dart` lock both the Windows path and the strict rejections. Android release validation and the production release script remain strict; this Windows compatibility path is not a production security boundary. `flutter test` cannot exercise the live release branch, so the predicate itself is the tested surface.
+
+The Microsoft JDK 21 used by Gradle is configured machine-locally only: `%USERPROFILE%\.gradle\gradle.properties` and `flutter config --jdk-dir`. The tracked `apps/rain/android/gradle.properties` must never contain `org.gradle.java.home` or any absolute machine path; CI resolves the JDK through `actions/setup-java`.
+
+Normal Windows EXE startup defaults to Firebase and clears invalid cached sessions into signed-out state. The explicit noop adapter remains available for offline tests only.
+
+## 2026-10-29 Windows Firebase RTDB threading limitation
+
+FlutterFire `firebase_database` Windows listeners sent EventChannel messages from Firebase worker threads, violating Flutter Windows platform-channel threading requirements. Android Firebase behavior is unchanged; the Windows fix is isolated to the vendored plugin.
+
+2026-10-30: Rain now vendors a repo-owned `firebase_database 13.0.1` fork and restores Firebase as the Windows default. RTDB listener events/errors and async results are dispatched through a runner-owned platform-thread queue drained by the Windows message loop, with shutdown guards. Firebase Debug and Release EXEs stayed alive in direct smoke launches, and Flutter run showed no RTDB thread warning.
+
+## 2026-10-29 Windows Debug linker warnings
+
+The Windows app links Firebase's prebuilt static libraries, which do not ship matching Debug PDB files and produce repetitive MSVC `LNK4099` warnings. Visual Studio 2026 also reports `LNK4078` for a third-party CRT section attribute mismatch in this Debug combination. Rain suppresses only these two warning codes on the Debug executable link in `apps/rain/windows/CMakeLists.txt`; Release linker diagnostics are not suppressed. A Flutter Windows Debug build completed successfully after the change.
+
+## 2026-10-27 Firebase startup regression
+
+Rain 1.0.8 had a release-path null assertion in Firebase bootstrap: the app attempted to pass `firebaseAdapter!` into the pair-cipher resolver while the `FirebaseSignalingAdapter` constructor assignment was still in progress. Firebase startup must construct the adapter first and configure the self-referential resolver afterward through `configurePairCipherResolver`. A source contract test protects this construction order.
 
 ## Purpose
 

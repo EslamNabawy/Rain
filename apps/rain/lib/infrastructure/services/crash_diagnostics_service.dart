@@ -816,8 +816,6 @@ class CrashDiagnosticsService {
       dialogTitle: dialogTitle,
       fileName: fileName ?? 'file',
       initialDirectory: initialDirectory,
-      type: type,
-      allowedExtensions: allowedExtensions,
       bytes: bytes ?? Uint8List(0),
       windowsOptions: WindowsOptions(lockParentWindow: lockParentWindow),
       linuxOptions: LinuxOptions(lockParentWindow: lockParentWindow),

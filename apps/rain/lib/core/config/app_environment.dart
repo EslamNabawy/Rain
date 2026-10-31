@@ -127,11 +127,25 @@ class AppEnvironment {
       }
     }
 
-    final backend = switch (readString(
-      'RAIN_BACKEND',
-      compileTimeValue: const String.fromEnvironment('RAIN_BACKEND'),
-      defaultValue: 'firebase',
-    )) {
+    // The repository-owned Windows firebase_database fork dispatches native
+    // RTDB listener callbacks through Flutter's platform thread. Firebase is
+    // therefore the normal backend on every supported desktop/mobile target;
+    // noop remains available only through an explicit RAIN_BACKEND override.
+    const defaultBackend = 'firebase';
+    // Do not let an ambient IDE/process environment silently switch a normal
+    // Windows launch into local demo mode. Noop is an explicit build choice;
+    // tests can still provide a runtime map directly.
+    final backendValue = runtimeEnvironment == null
+        ? const String.fromEnvironment(
+            'RAIN_BACKEND',
+            defaultValue: defaultBackend,
+          )
+        : readString(
+            'RAIN_BACKEND',
+            compileTimeValue: const String.fromEnvironment('RAIN_BACKEND'),
+            defaultValue: defaultBackend,
+          );
+    final backend = switch (backendValue) {
       'firebase' => RainBackend.firebase,
       _ => RainBackend.noop,
     };
@@ -432,7 +446,15 @@ class AppEnvironment {
       );
     }
     final isDemoRelease = updateChannel == 'demo' && allowPublicTurn;
-    if (!isDemoRelease && !signalingEncryptionKeyProvided) {
+    final localWindowsDevKeyRelease = allowsLocalWindowsDevKeyRelease(
+      isRelease: kReleaseMode,
+      platform: defaultTargetPlatform,
+      signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
+      signalingEncryptionKey: signalingEncryptionKey,
+    );
+    if (!isDemoRelease &&
+        !signalingEncryptionKeyProvided &&
+        !localWindowsDevKeyRelease) {
       throw StateError(
         'RAIN_SIGNALING_ENCRYPTION_KEY is required in production release builds.',
       );
@@ -445,6 +467,30 @@ class AppEnvironment {
     if (!allowPublicTurn && usesPublicOpenRelay) {
       throw StateError('Release builds require project-owned TURN servers.');
     }
+  }
+
+  /// Returns whether a release build may start with the bundled development
+  /// signaling key.
+  ///
+  /// Rain's documented local Windows compatibility path: a locally built
+  /// Windows release EXE without any supplied signaling key preserves the
+  /// historical double-click startup behavior and uses the bundled
+  /// development key instead of failing the release guard. This is
+  /// explicitly not a production security boundary: distributable production
+  /// artifacts go through the release scripts with a real key, Android
+  /// release validation stays strict, and the bundled demo key remains
+  /// rejected everywhere outside demo builds.
+  @visibleForTesting
+  static bool allowsLocalWindowsDevKeyRelease({
+    required bool isRelease,
+    required TargetPlatform platform,
+    required bool signalingEncryptionKeyProvided,
+    required String signalingEncryptionKey,
+  }) {
+    return isRelease &&
+        platform == TargetPlatform.windows &&
+        !signalingEncryptionKeyProvided &&
+        signalingEncryptionKey == devSignalingEncryptionKey;
   }
 
   void validateProductionIceConfig() {

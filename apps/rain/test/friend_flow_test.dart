@@ -30,6 +30,30 @@ import 'package:rain/application/runtime/voice_call/voice_call_diagnostics.dart'
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain_core/rain_core.dart';
 
+/// Deletes a test temp directory, tolerating transient Windows handle races.
+///
+/// On Windows an async file sink can keep its handle alive for a moment after
+/// `runtime.dispose()`, so an immediate recursive delete can fail with
+/// errno 32 ("another process is using the file"). Cleanup is best effort:
+/// retry briefly, then give up rather than failing the test for a harmless
+/// leaked temp directory.
+void _deleteTempDirBestEffort(Directory tempDir) {
+  for (var attempt = 0; attempt < 10; attempt++) {
+    try {
+      if (!tempDir.existsSync()) {
+        return;
+      }
+      tempDir.deleteSync(recursive: true);
+      return;
+    } on FileSystemException catch (error) {
+      if (attempt == 9 || error.osError?.errorCode != 32) {
+        return;
+      }
+      sleep(const Duration(milliseconds: 100));
+    }
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -5220,7 +5244,7 @@ void main() {
       } finally {
         await runtime.dispose();
         if (tempDir.existsSync()) {
-          tempDir.deleteSync(recursive: true);
+          _deleteTempDirBestEffort(tempDir);
         }
       }
     });
@@ -5324,7 +5348,7 @@ void main() {
         } finally {
           await runtime.dispose();
           if (tempDir.existsSync()) {
-            tempDir.deleteSync(recursive: true);
+            _deleteTempDirBestEffort(tempDir);
           }
         }
       },
@@ -5433,7 +5457,7 @@ void main() {
         } finally {
           await runtime.dispose();
           if (tempDir.existsSync()) {
-            tempDir.deleteSync(recursive: true);
+            _deleteTempDirBestEffort(tempDir);
           }
         }
       },
@@ -5568,7 +5592,7 @@ void main() {
       } finally {
         await runtime.dispose();
         if (tempDir.existsSync()) {
-          tempDir.deleteSync(recursive: true);
+          _deleteTempDirBestEffort(tempDir);
         }
       }
     });
@@ -5671,7 +5695,7 @@ void main() {
       } finally {
         await runtime.dispose();
         if (tempDir.existsSync()) {
-          tempDir.deleteSync(recursive: true);
+          _deleteTempDirBestEffort(tempDir);
         }
       }
     });
@@ -5770,7 +5794,7 @@ void main() {
         } finally {
           await runtime.dispose();
           if (tempDir.existsSync()) {
-            tempDir.deleteSync(recursive: true);
+            _deleteTempDirBestEffort(tempDir);
           }
         }
       },
@@ -5870,7 +5894,7 @@ void main() {
       } finally {
         await runtime.dispose();
         if (tempDir.existsSync()) {
-          tempDir.deleteSync(recursive: true);
+          _deleteTempDirBestEffort(tempDir);
         }
       }
     });
@@ -6117,7 +6141,7 @@ void main() {
       } finally {
         await runtime.dispose();
         if (tempDir.existsSync()) {
-          tempDir.deleteSync(recursive: true);
+          _deleteTempDirBestEffort(tempDir);
         }
       }
     });

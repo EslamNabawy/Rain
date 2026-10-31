@@ -30,7 +30,7 @@ set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE}")
 set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 
 # Use Unicode for all projects.
-add_definitions(-DUNICODE -D_UNICODE)
+add_definitions(-DUNICODE -D_UNICODE -D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
 
 # Compilation settings that should be applied to most targets.
 #
@@ -51,6 +51,17 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
+
+# Firebase's Windows SDK is distributed as prebuilt static libraries without
+# matching Debug PDB files. Visual Studio therefore emits LNK4099 for every
+# Firebase object it links. The v180 CRT also emits LNK4078 for a known section
+# attribute mismatch in this third-party Debug combination. These warnings do
+# not affect the generated executable; keep the suppression local to Rain's
+# Debug link instead of weakening warnings globally or changing Release.
+target_link_options(${BINARY_NAME} PRIVATE
+  "$<$<CONFIG:Debug>:/IGNORE:4099>"
+  "$<$<CONFIG:Debug>:/IGNORE:4078>"
+)
 
 
 # Generated plugin build rules, which manage building the plugins and adding

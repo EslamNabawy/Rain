@@ -96,24 +96,36 @@ class AppBootstrapper {
         effectiveEnvironment.signalingEncryptionKey,
       );
       FirebaseSignalingAdapter? firebaseAdapter;
-      final rawAdapter = effectiveEnvironment.shouldUseFallbackAdapter
-          ? NoopSignalingAdapter()
-          : switch (effectiveEnvironment.backend) {
-              RainBackend.firebase =>
-                firebaseAdapter = FirebaseSignalingAdapter(
-                  database: firebaseDatabase!,
-                  signalingCipher: signalingCipher,
-                  pairCipherResolver: buildAppPairCipherResolver(
-                    adapter: firebaseAdapter!,
-                    identityKeys: IdentityKeyRepository(
-                      database,
-                      FlutterSecureStorageKeyStoreService(),
-                    ),
-                    localUsername: () => firebaseAdapter?.signedInUsername,
-                  ),
-                ),
-              RainBackend.noop => NoopSignalingAdapter(),
-            };
+      late final SignalingAdapter rawAdapter;
+      if (effectiveEnvironment.shouldUseFallbackAdapter) {
+        rawAdapter = NoopSignalingAdapter();
+      } else if (effectiveEnvironment.backend == RainBackend.firebase) {
+        final databaseInstance = firebaseDatabase;
+        if (databaseInstance == null) {
+          throw StateError(
+            'Firebase Realtime Database was not initialized even though '
+            'the Firebase backend was selected.',
+          );
+        }
+        final createdAdapter = FirebaseSignalingAdapter(
+          database: databaseInstance,
+          signalingCipher: signalingCipher,
+        );
+        firebaseAdapter = createdAdapter;
+        createdAdapter.configurePairCipherResolver(
+          buildAppPairCipherResolver(
+            adapter: createdAdapter,
+            identityKeys: IdentityKeyRepository(
+              database,
+              FlutterSecureStorageKeyStoreService(),
+            ),
+            localUsername: () => firebaseAdapter?.signedInUsername,
+          ),
+        );
+        rawAdapter = createdAdapter;
+      } else {
+        rawAdapter = NoopSignalingAdapter();
+      }
       final debugLogService = _debugLogService;
       final adapter = debugLogService == null
           ? rawAdapter

@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include <firebase_database/firebase_database_plugin_c_api.h>
+
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -25,7 +27,9 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  FirebaseDatabasePluginCApiSetFlutterEngine(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  FirebaseDatabasePluginCApiSetFlutterWindow(GetHandle());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -41,6 +45,11 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
+    // Stop new Firebase worker-thread callbacks from posting tasks before the
+    // engine is destroyed. Already queued callbacks are lifecycle-guarded by
+    // the plugin and will be discarded safely.
+    FirebaseDatabasePluginCApiSetFlutterWindow(nullptr);
+    FirebaseDatabasePluginCApiSetFlutterEngine(nullptr);
     flutter_controller_ = nullptr;
   }
 
@@ -51,6 +60,11 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == WM_APP + 0x5A1) {
+    FirebaseDatabasePluginCApiDrainPlatformThreadTasks();
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

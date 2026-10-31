@@ -1,6 +1,36 @@
 # Recommended Next Actions
 
-Last updated: 2026-10-10
+Last updated: 2026-10-31
+
+## 2026-10-31 Release guard re-verification
+
+The Windows no-defines release path was re-implemented in code (`AppEnvironment.allowsLocalWindowsDevKeyRelease`, locked by contract tests) after the audit found the documented behavior had regressed. The next required proof is a fresh plain `flutter build windows --release` EXE launched directly (no Dart defines) that reaches the sign-in screen, plus the still-open authenticated Windows Firebase smoke (sign-in, presence, friend lookup, signaling, clean shutdown). Treat these as unverified until executed.
+
+## 2026-10-30 Android toolchain follow-up
+
+Keep the Android toolchain pinned to JDK 21, NDK `28.2.13676358`, and Kotlin Gradle Plugin `2.4.21` until a planned AGP 9 migration is completed. The remaining Gradle/AGP messages are future-support notices, not current build failures; migrate only after checking Flutter built-in Kotlin and all plugin compatibility.
+
+AGP 9 / Gradle 9.1 is now verified. The next Android maintenance task is to track built-in-Kotlin support in `firebase_*`, `cloud_functions`, and `flutter_webrtc`; do not enable `android.builtInKotlin=true` until all resolved plugins support it.
+
+Rebuild and redistribute the Windows release executable after bootstrap changes; persisted crash diagnostics can describe an older binary and must not be treated as current evidence without checking `recordedAt` and the executable build.
+
+Use `scripts/build_stable_test_pair.ps1 -SkipAndroid -SmokeWindows` for local Windows release validation so required Dart defines are present; never build a production release with the example/demo key or no signaling key.
+
+The app now starts from a plain local Windows release build without Dart defines, but production Windows distribution still requires the release script and a real shared signaling key.
+
+Windows EXE smoke now reaches the sign-in screen with the Firebase backend. Keep the direct Debug/Release smoke in the Windows release checklist and complete an authenticated Firebase sign-in/presence/signaling smoke.
+
+## 2026-10-29 Windows Firebase follow-up
+
+The repo-owned Windows Firebase fork now resolves the RTDB EventChannel thread violation. The next proof is an authenticated Windows Firebase smoke covering sign-in, presence, friend lookup, signaling, and clean shutdown.
+
+## 2026-10-29 Windows build warning cleanup
+
+The Windows Debug build now suppresses only the known Firebase prebuilt-library `LNK4099` PDB warnings and the related `LNK4078` third-party section warning at the Rain executable link. Keep Release builds unsuppressed and revisit these flags if Firebase or the Visual Studio toolset changes.
+
+## 2026-10-27 Immediate follow-up
+
+Validate the Firebase startup construction-order fix with the Flutter toolchain, then publish a patched artifact before further UI/device validation. The reported 1.0.8 crash is caused by a deterministic null assertion in Firebase bootstrap, not by a user account or network condition.
 
 ## Purpose
 

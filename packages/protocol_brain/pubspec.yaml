@@ -12,14 +12,15 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-  firebase_auth: ^6.1.1
-  firebase_database: ^12.0.4
+  firebase_auth: ^7.0.1
+  firebase_database:
+    path: ../firebase_database
   collection: ^1.19.1
   flutter_webrtc: ^1.4.1
   peer_core:
     path: ../peer_core
   cryptography: ^2.9.0
-  cloud_functions: ^6.3.1
+  cloud_functions: ^7.0.1
 
 dev_dependencies:
   flutter_lints: ^6.0.0

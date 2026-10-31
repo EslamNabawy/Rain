@@ -8,11 +8,12 @@
 /// **Depends on:** flutter_test, core/config
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/core/config/app_environment.dart';
 
 void main() {
-  test('firebase is the default backend when no define overrides it', () {
+  test('the default backend uses Firebase on supported targets', () {
     final environment = AppEnvironment.fromEnvironment(
       runtimeEnvironment: const <String, String>{},
     );
@@ -21,6 +22,17 @@ void main() {
     expect(environment.updateChannel, 'stable');
     expect(environment.signalingEncryptionKey, devSignalingEncryptionKey);
     expect(environment.signalingEncryptionKeyProvided, isFalse);
+  });
+
+  test('Windows uses Firebase by default and supports explicit noop mode', () {
+    final defaultEnvironment = AppEnvironment.fromEnvironment();
+    expect(defaultEnvironment.backend, RainBackend.firebase);
+
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{'RAIN_BACKEND': 'noop'},
+    );
+
+    expect(environment.backend, RainBackend.noop);
   });
 
   test('runtime environment can configure update channel', () {
@@ -111,6 +123,85 @@ void main() {
         ),
       ),
     );
+  });
+
+  group('allowsLocalWindowsDevKeyRelease', () {
+    test('permits the bundled dev key on a local Windows release build', () {
+      expect(
+        AppEnvironment.allowsLocalWindowsDevKeyRelease(
+          isRelease: true,
+          platform: TargetPlatform.windows,
+          signalingEncryptionKeyProvided: false,
+          signalingEncryptionKey: devSignalingEncryptionKey,
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects every platform except Windows', () {
+      for (final platform in const <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      ]) {
+        expect(
+          AppEnvironment.allowsLocalWindowsDevKeyRelease(
+            isRelease: true,
+            platform: platform,
+            signalingEncryptionKeyProvided: false,
+            signalingEncryptionKey: devSignalingEncryptionKey,
+          ),
+          isFalse,
+          reason: '$platform must stay under strict release validation',
+        );
+      }
+    });
+
+    test('rejects non-release builds so debug and tests stay strict', () {
+      expect(
+        AppEnvironment.allowsLocalWindowsDevKeyRelease(
+          isRelease: false,
+          platform: TargetPlatform.windows,
+          signalingEncryptionKeyProvided: false,
+          signalingEncryptionKey: devSignalingEncryptionKey,
+        ),
+        isFalse,
+      );
+    });
+
+    test('rejects when a signaling key was provided', () {
+      expect(
+        AppEnvironment.allowsLocalWindowsDevKeyRelease(
+          isRelease: true,
+          platform: TargetPlatform.windows,
+          signalingEncryptionKeyProvided: true,
+          signalingEncryptionKey: 'rain-project-owned-signaling-key-material',
+        ),
+        isFalse,
+      );
+    });
+
+    test('rejects anything that is not the bundled dev key', () {
+      expect(
+        AppEnvironment.allowsLocalWindowsDevKeyRelease(
+          isRelease: true,
+          platform: TargetPlatform.windows,
+          signalingEncryptionKeyProvided: false,
+          signalingEncryptionKey: demoSignalingEncryptionKey,
+        ),
+        isFalse,
+      );
+      expect(
+        AppEnvironment.allowsLocalWindowsDevKeyRelease(
+          isRelease: true,
+          platform: TargetPlatform.windows,
+          signalingEncryptionKeyProvided: false,
+          signalingEncryptionKey: '',
+        ),
+        isFalse,
+      );
+    });
   });
 
   test('demo config can explicitly allow public OpenRelay', () {

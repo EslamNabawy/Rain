@@ -2,7 +2,78 @@
 
 This file must survive across future AI sessions.
 
+## Release Guard Reconciliation & Gradle JDK Hygiene 2026-10-31
+
+- Audit found that the documented "Windows EXE No-Defines Compatibility" behavior had regressed out of the code: `AppEnvironment.validateForRelease()` threw for a plain no-defines Windows release even though CONTINUITY and Project Memory said the local Windows path accepts the bundled development key.
+- Re-implemented the compatibility path as a testable predicate, `AppEnvironment.allowsLocalWindowsDevKeyRelease(...)` in `apps/rain/lib/core/config/app_environment.dart`, and `validateForRelease()` now checks it. The predicate requires `kReleaseMode`, `TargetPlatform.windows`, no provided signaling key, and exactly the bundled development key value. Android, other platforms, debug builds, provided keys, the demo key, and non-release builds all keep strict validation. `flutter test` itself cannot exercise the release branch (kReleaseMode is false in tests), so the contract tests lock the predicate directly.
+- `apps/rain/test/app_environment_test.dart` gained five predicate tests (Windows release permitted; every other platform rejected; non-release rejected; provided key rejected; demo key / empty value rejected). The pre-existing "rejects missing production signaling key" test still passes and keeps the strict path locked.
+- `packages/protocol_brain/test/release_contract_test.dart` still expected Kotlin Gradle Plugin `2.2.20` while the Android toolchain upgrade had pinned `2.4.21`; the stale pin is updated to `2.4.21` so the contract matches the declared toolchain (this suite failure predates this session).
+- `apps/rain/test/friend_flow_test.dart` temp-directory cleanup raced async sink disposal on Windows (errno 32 `PathAccessException` in the cancel-incoming-transfer test). All eight cleanup sites now go through `_deleteTempDirBestEffort`, which retries errno-32 deletions briefly and is best effort; leaked temp dirs no longer fail tests.
+- `org.gradle.java.home=C:/Program Files/Microsoft/jdk-21.0.12.101-hotspot` was an absolute machine path in the tracked `apps/rain/android/gradle.properties`, overriding CI's `actions/setup-java` JAVA_HOME. It is removed from the repo file; the JDK is now configured machine-locally only: `%USERPROFILE%\.gradle\gradle.properties` (untracked) plus `flutter config --jdk-dir`. CI and other machines resolve the JDK from setup-java again.
+- Validation: `flutter analyze` clean per package; `dart run melos run analyze` SUCCESS (5 packages); `dart run melos run test` SUCCESS across the workspace (protocol_brain 300, apps/rain 896 passed / 30 skipped, peer_core & rain_core & firebase_database green). Vault validator re-run after these edits.
+- Committed as `6d1a97c` on local `dev` (244 files: vendored fork, toolchain, Windows fixes, guard re-implementation, vault sync). The fork's generated artifacts (`example/android/local.properties`, `ephemeral/`, `firebase_app_id_file.json`) were excluded from tracking and a fork `.gitignore` added before the final amend. Branch is `ahead 1, behind 29` versus `origin/dev`: do not pull blindly, resolve the pubspec.lock and fork-dependency divergence deliberately before pushing.
+
 Every future session must read this file before starting non-trivial work.
+
+## Windows Linker Warning Cleanup 2026-10-29
+
+- `apps/rain/windows/CMakeLists.txt` suppresses Debug-only MSVC `LNK4099` (missing PDBs from prebuilt Firebase Windows libraries) and `LNK4078` (third-party CRT section attribute mismatch) on the Rain executable link. Release linker diagnostics remain unchanged.
+- Verification: `C:\flutter\bin\flutter.bat build windows --debug` from `apps/rain` completed successfully with `rain.exe` built and no linker warnings in the build output. The root-level invocation is not valid because the root workspace has no `lib\main.dart`; Android Studio's configured app target remains the supported launch path.
+
+## Android Emulator Build Repair 2026-10-30
+
+- Installed the Flutter-requested Android NDK `28.2.13676358` and configured Flutter to use the installed Microsoft JDK 21 instead of Android Studio JDK 25; this resolves the original missing-NDK and Java/Gradle incompatibility failures.
+- Updated `apps/rain/android/settings.gradle.kts` to Kotlin Gradle Plugin `2.4.21`, matching the Kotlin metadata shipped by the resolved Firebase Auth artifact.
+- Removed the empty `ANDROID_PREFS_ROOT` Gradle property, which incorrectly redirected the debug keystore lookup to the missing `android/app/.android/debug.keystore`.
+- Verification: `C:\flutter\bin\flutter.bat doctor -v` reports no issues and `C:\flutter\bin\flutter.bat build apk --debug` produced `build\\app\\outputs\\flutter-apk\\app-debug.apk`.
+- Flutter still reports future-support notices for Gradle `8.14.0` and AGP `8.11.1`; upgrading to AGP 9 requires the built-in Kotlin migration and plugin compatibility review, so it was not bundled into this repair.
+
+## Android Gradle Toolchain Upgrade 2026-10-30
+
+- Upgraded `apps/rain/android/gradle/wrapper/gradle-wrapper.properties` to Gradle `9.1.0` and `apps/rain/android/settings.gradle.kts` to AGP `9.0.1`.
+- Verification: `C:\flutter\bin\flutter.bat build apk --debug` completed successfully and produced `build\\app\\outputs\\flutter-apk\\app-debug.apk`.
+- Flutter now reports only the AGP 9 legacy-KGP compatibility warning for third-party plugins (`firebase_*`, `cloud_functions`, and `flutter_webrtc`). Keep `android.builtInKotlin=false` until compatible plugin releases are available; enabling it now would be an unsupported migration.
+
+## Windows Release Bootstrap Nullability Fix 2026-10-30
+
+- `AppBootstrapper` no longer uses `firebaseDatabase!` when constructing the Firebase signaling adapter. It now validates initialization and throws an explicit configuration error instead of `Null check operator used on a null value`.
+- The supplied crash file was recorded on 2026-10-28 against the older bootstrap line; it is stale relative to this fix.
+- Verification: `app_bootstrap_contract_test.dart` passed and `C:\flutter\bin\flutter.bat build windows --release` produced `apps/rain/build/windows/x64/runner/Release/rain.exe`.
+
+## Windows Release Dart Defines 2026-10-30
+
+- The first rebuilt EXE still showed the generic startup screen because it was built without `RAIN_SIGNALING_ENCRYPTION_KEY`; the fresh diagnostic identified this as `Bad state: RAIN_SIGNALING_ENCRYPTION_KEY is required in production release builds.`
+- Rebuilt with `scripts\\build_stable_test_pair.ps1 -SkipAndroid -SmokeWindows`, which generates a non-demo local key and embeds it in the Windows release artifact. The resulting EXE starts and remains running in a direct 12-second smoke check.
+- Distribute the complete `apps/rain/build/windows/x64/runner/Release` directory, not `rain.exe` alone; Flutter Windows requires the adjacent `data` directory and DLLs.
+
+## Windows EXE No-Defines Compatibility 2026-10-30
+
+- Restored the normal double-click behavior for locally built Windows release EXEs: when no `RAIN_SIGNALING_ENCRYPTION_KEY` Dart define is supplied, Windows release startup accepts Rain's existing bundled development key instead of failing on the release guard.
+- Android release validation remains strict. The release packaging script still rejects missing keys for distributable production artifacts.
+- Verification: focused environment tests passed and a plain `C:\flutter\bin\flutter.bat build windows --release` produced an EXE that stayed running for a 10-second direct launch smoke check.
+
+## Windows Local Startup Completion 2026-10-30
+
+- Windows now defaults to Firebase in both Debug and Release; noop is explicit offline/test mode only.
+- Local Windows startup also treats cached-session validation errors as signed-out state, preventing stale Firebase session data from blocking the onboarding screen.
+- Verification: startup transition/runtime tests passed; a fresh Windows Release EXE reached the sign-in screen with the local-demo banner instead of `Something went wrong`.
+
+## Windows Firebase RTDB Threading Mitigation 2026-10-29
+
+- FlutterFire `firebase_database` Windows listeners emitted EventChannel messages from Firebase worker threads. The repo-owned fork now queues listener events/errors and async completions to the runner's Windows platform-thread message loop and guards shutdown.
+- Verification: Firebase Debug and Release builds passed; direct EXE smoke launches stayed alive; `flutter run -d windows` reached the VM service without the RTDB thread error or local-demo banner.
+
+## Windows Build & Nullability Repair 2026-10-27
+
+- **Nullable Function Call Fix**: Fixed Dart sound null safety error in `packages/protocol_brain/lib/adapters/firebase_adapter.dart` (`_resolvePairCipher`). Promoted `_pairCipherResolver` field to a local non-nullable variable `final resolver = _pairCipherResolver;` before invoking `await resolver(peer)`. `dart analyze packages/protocol_brain` is clean.
+- **Misplaced Workspace Root `lib/` Removal**: Removed duplicate/sketch `D:/Rain/lib/infrastructure/diagnostics/tracing/` files placed at the workspace root instead of under `apps/rain/lib/infrastructure/diagnostics/tracing/`. The workspace root package (`rain_workspace`) lacks Flutter dependencies, causing 16 analysis errors. Valid files exist under `apps/rain/lib/`. Workspace `dart analyze` is now 100% clean across all 4 packages.
+- **Google Fonts 9.0.0 `TextTheme` Conflict & FilePicker Deprecation**: Constrained `google_fonts: '>=8.1.0 <9.0.0'` in `apps/rain/pubspec.yaml` to prevent `google_fonts 9.0.0` from pulling in `material_ui 1.8.0`, which shadowed Flutter Material's `TextTheme`. Removed deprecated `type` and `allowedExtensions` arguments from `FilePicker.saveFile` in `crash_diagnostics_service.dart` and `received_file_export_service.dart`. `dart analyze` passes with 0 issues across all packages.
+
+## Firebase Startup Null Assertion 2026-10-27
+
+- Root cause: `apps/rain/lib/application/bootstrap/app_bootstrap.dart` passed `firebaseAdapter!` into `buildAppPairCipherResolver` while the `FirebaseSignalingAdapter` constructor assignment was still evaluating. Firebase-backed 1.0.8 startup therefore dereferenced null before the adapter existed.
+- Fix in working tree: construct the adapter first, then call `configurePairCipherResolver` with the initialized adapter. Added `apps/rain/test/app_bootstrap_contract_test.dart` to prevent the self-reference regression.
+- Validation: Dart/Flutter commands were not executable from the current shell (`dart` and `flutter` absent from `PATH`); targeted test and analyzer remain pending on a Flutter-enabled environment.
 
 ## CI Release Pipeline 2026-10-27
 
@@ -208,6 +279,8 @@ Phase 9: Documentation and blocker closure. All implementation phases (0-8) comp
 
 - BLK-002 is mitigated for the implemented false-busy stale-lock policy and local Firebase emulator proof now covers stale/terminal/malformed/live-lock preservation paths. It remains open only for live Firebase or device-direction release evidence if required by the release gate.
 - BLK-010 is mitigated and release-gate proven for auth/session/account-deletion behavior after `Build Rain Apps` run 26957834309, but remains open for broader production readiness until remaining startup/device proof and cross-flow scenario gaps are closed.
+
+- 2026-10-30 Windows Firebase fork implementation: `packages/firebase_database` is now a repo-owned fork of FlutterFire `firebase_database 13.0.1`. Windows RTDB listener events/errors and async completions are marshalled through a runner-owned platform-thread queue with cancellation-safe listener state. Windows defaults back to Firebase; noop is explicit only. Firebase Debug and Release EXE smokes passed, and Flutter run showed no RTDB platform-thread warning.
 
 ## Next Recommended Action
 

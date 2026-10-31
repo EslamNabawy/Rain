@@ -63,7 +63,7 @@ class FirebaseSignalingAdapter
   final ConnectionRequestAdapterDiagnosticsSink?
   _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
-  final SignalingCipherResolver? _pairCipherResolver;
+  SignalingCipherResolver? _pairCipherResolver;
   final String? _localUsername;
   final bool _useEmulator;
   // F-015 (Phase 1): per-pair cipher cache keyed by peer username. Avoids
@@ -75,6 +75,18 @@ class FirebaseSignalingAdapter
 
   /// Username of the signed-in account (see [_effectiveLocalUsername]).
   String? get signedInUsername => _effectiveLocalUsername;
+
+  /// Configures the per-peer cipher resolver after construction.
+  ///
+  /// The resolver needs to call back into this adapter, so it cannot be
+  /// created as a constructor argument without reading the adapter before the
+  /// constructor assignment has completed.
+  void configurePairCipherResolver(SignalingCipherResolver resolver) {
+    if (_pairCipherResolver != null) {
+      throw StateError('Pair cipher resolver is already configured');
+    }
+    _pairCipherResolver = resolver;
+  }
 
   /// The configured local username, or the one encoded in the signed-in
   /// account's e-mail (`<username>@rain.local`).
@@ -167,8 +179,9 @@ class FirebaseSignalingAdapter
   Future<SignalingCipher?> _resolvePairCipher(
     ({String sender, String receiver}) context,
   ) async {
+    final resolver = _pairCipherResolver;
     final localUsername = _effectiveLocalUsername;
-    if (_pairCipherResolver == null || localUsername == null) {
+    if (resolver == null || localUsername == null) {
       return null;
     }
     final normalizedLocal = _normalizedUsername(localUsername);
@@ -180,7 +193,7 @@ class FirebaseSignalingAdapter
     if (cached != null && now - cached.at < _pairCipherTtlMs) {
       return cached.cipher;
     }
-    final resolved = await _pairCipherResolver(peer);
+    final resolved = await resolver(peer);
     if (resolved != null) {
       _pairCipherCache[peer] = (cipher: resolved, at: now);
     } else {

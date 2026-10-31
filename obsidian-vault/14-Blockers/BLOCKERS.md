@@ -351,6 +351,24 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Exit Criteria: Owner confirms rotation or that the values are already dead.
 - Detection Strategy: Secret scan in CI.
 
+### BLK-014: Windows Firebase Release Native Crash
+
+- Status: Resolved
+- Severity: Critical
+- Owner: Engineering
+- Type: Technical / Release
+- Related Risks: R-018, R-022
+- Related Roadmap Tasks: Windows release validation / Firebase platform compatibility
+- Related Debt: TD-030
+- Impact: Resolved. The Firebase-enabled Windows EXE no longer exits during startup.
+- Current mitigation: Repo-owned `firebase_database 13.0.1` fork marshals RTDB callbacks through a runner-owned platform-thread queue and guards listener shutdown.
+- Workaround Strategy: No workaround is required for normal Windows Firebase startup; noop remains explicit offline-test mode.
+- Parallel Progress Path: Debug Firebase validation, Android Firebase validation, plugin unit tests, and repository analysis can continue independently.
+- Resolution Plan: Keep the direct Debug/Release EXE smoke in the Windows release checklist and add an authenticated Firebase smoke when credentials are available.
+- Exit Criteria: Firebase-enabled Windows Release EXE launches, remains alive for the smoke window, reaches the sign-in surface, and produces no non-platform-thread warnings or native crash.
+- Detection Strategy: `flutter build windows --release` with Firebase defines followed by direct EXE launch, process-liveness check, Windows application crash log review, and Firebase listener smoke.
+- Evidence: Firebase Debug build and 10-second direct EXE smoke passed; Flutter run reached the VM service without the RTDB thread warning; Firebase Release build and 10-second direct EXE smoke passed.
+
 ## Blocker Review Cadence
 
 - Critical blockers: review before every release workflow.

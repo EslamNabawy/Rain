@@ -1,5 +1,9 @@
 # Master Roadmap
 
+## 2026-10-27 release stability correction
+
+Rain 1.0.8 Firebase startup had a deterministic adapter-construction null assertion. The working-tree remediation now constructs the adapter before wiring its pair-cipher resolver; Flutter validation and a patched release artifact are the immediate follow-up before release promotion.
+
 Last updated: 2026-06-06
 
 ## Purpose

@@ -1,0 +1,45 @@
+# Vendored firebase_database fork ignore rules (upstream FlutterFire plugin repo).
+# Keeps generated and machine-local files out of version control.
+
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+ephemeral/
+**/ephemeral/
+.cache/
+
+# Android
+android/local.properties
+local.properties
+.gradle/
+example/android/app/.gradle/
+captures/
+android/app/google-services.json.orig
+.cxx/
+*.jks
+
+# iOS / macOS generated
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+**/ios/Flutter/ephemeral/
+macos/Flutter/ephemeral/
+**/macos/Flutter/ephemeral/
+firebase_app_id_file.json
+**/firebase_app_id_file.json
+
+# Windows generated
+windows/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
+example/windows/flutter/generated_plugin_registrant.cc
+example/windows/flutter/generated_plugin_registrant.h
+example/windows/flutter/generated_plugins.cmake
+
+# Editor / OS
+.idea/
+.vscode/
+*.iml
