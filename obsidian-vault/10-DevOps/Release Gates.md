@@ -159,3 +159,14 @@ Local Phase 8 proof is structural. Cloud release proof still requires running th
 - Documentation vault check fails.
 
 Related: [[CI-CD Roadmap]], [[Production Readiness]].
+
+### 2026-10-31 Validated Demo Release
+
+- Workflow: `Validated Release Apps`
+- Run: https://github.com/EslamNabawy/Rain/actions/runs/41224020978
+- Branch/SHA: `codex/release-fix` / `7b8b8b7b987d541e09c94ace9466931d50c07f0f`
+- Inputs: `target_ref=codex/release-fix`, `platform=all`, `build_profile=demo`, `publish_github_release=true`, `prerelease=true`
+- Passed: all validation gates, Android APK ABI verification, Windows runtime verification, required checks, and GitHub release publication.
+- Published release: https://github.com/EslamNabawy/Rain/releases/tag/rain-validated-16-1
+- Published assets: `Rain-Demo-Android-v7a.apk`, `Rain-Demo-Android-v8-v9.apk`, `Rain-Demo-Windows-x64.zip`, `rain-release-metadata.json`.
+- Security remediation: Firebase Functions dependency audit initially failed on the `dev` commit; commit `7b8b8b7` patched the transitive `glob`/`minimatch`/`rimraf` ranges and cleared the audit.

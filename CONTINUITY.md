@@ -278,3 +278,10 @@ Second-pass audit implementation executed across Phases 1-4 (commit `5c02b2b` + 
 
 ### Next Recommended Action
 After CI #14 is green and merged: tackle emulator-gated deferred items with a Firebase emulator runner (TASK-017 fuzz, DEBT-016, TASK-001 adapter wiring, TASK-002 open path). Then revisit a11y pass + vault closure.
+
+## Validated Demo Release 2026-10-31
+
+- The first validated release dispatch on `dev` (run `41223340831`) was blocked by four moderate npm audit findings in Firebase Functions: the existing `glob` override allowed a vulnerable range through `google-gax`/`rimraf`.
+- Commit `7b8b8b7` on branch `codex/release-fix` added patched `glob`, `minimatch`, and `rimraf` overrides and regenerated `backend/firebase/functions/package-lock.json`. Local `npm ci`, lint, 37 tests, and `npm audit --omit=dev --audit-level=moderate` passed with zero vulnerabilities.
+- Validated release run `41224020978` passed workflow lint, Dart formatting, workspace analyze/tests, Firebase backend lint/audit/tests, emulator integration, vault validation, Android ABI verification, Windows runtime verification, and required checks.
+- Published demo pre-release: `rain-validated-16-1` with APKs, Windows ZIP, metadata, and generated release notes. Release URL: https://github.com/EslamNabawy/Rain/releases/tag/rain-validated-16-1

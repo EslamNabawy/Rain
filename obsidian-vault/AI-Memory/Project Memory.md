@@ -537,4 +537,9 @@ No implementation is complete until affected Obsidian vault notes are updated. A
 - [[Failure Graph]]
 - [[Scenario Coverage Matrix]]
 - [[AI Memory Index]]
+
+## Release Evidence 2026-10-31
+
+- The validated demo release workflow now passes the Firebase Functions moderate audit after constraining `glob` to the patched `14.0.3` range and adding patched `minimatch`/`rimraf` overrides; the lockfile was regenerated and `npm audit --omit=dev --audit-level=moderate` reports zero vulnerabilities.
+- GitHub Actions run `41224020978` passed all validation, Android, Windows, and publication jobs from commit `7b8b8b7` and published pre-release `rain-validated-16-1`.
 - [[Session Handoff]]
