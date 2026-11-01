@@ -7,8 +7,8 @@ This file must survive across future AI sessions.
 - User-reported live failure: connecting to `@nourr` fails with `Peer signaling data could not be written: permission-denied`, thrown by `_handleLocalIceWriteError` in `packages/protocol_brain/lib/mind/protocol_brain_impl.dart` when the ICE push to `rooms/$roomId/callerICE|calleeICE` is rejected.
 - The current client writes salt-carrying v=2 signaling envelopes. The repo rules (`backend/firebase/database.rules.json`, changed 2026-10-10 in `bbf43de`/`53bfab4`/`d9d279d`/`3c3b64c`) accept `v===1 || v===2` with `salt` (string <= 64) for all signaling nodes.
 - The last live rules deploy/readback evidence is 2026-06-07 (commit `1535270` era). `git diff 1535270..HEAD` on `database.rules.json` shows the signaling validates were upgraded from `v===1` only to also accept v=2 + salt. Deployment is manual per `backend/firebase/README.md`; no live readback has been recorded since.
-- Local emulator proof (both sides, `firebase-tools 15.18.0` + `backend/firebase/rules-test/run.js` harness): (1) checked-in rules pass 21/21, explicitly accepting v=1 and v=2+salt room and voice-call envelopes; (2) June-era rules snapshot (`git show 1535270:backend/firebase/database.rules.json`) rejects v=2 ICE writes: per-candidate validates require `v===1` exactly and `$other:false` rejects the `salt` field — v=2 with salt fails `permission_denied` for both caller and callee roles, v=2 without salt also fails, v=1 still succeeds. This reproduces the user-reported error exactly.
-- Root cause: live RTDB rules are presumed stale (June state); the client's v=2 envelope writes are denied. not an app bug. Secondary possibility (unproven): a stale `security/blockedUids/{uid}` row denies all writes — checked only after rules deploy if the connect retry still fails.
+- Local emulator proof (both sides, `firebase-tools 15.18.0` + `backend/firebase/rules-test/run.js` harness): (1) checked-in rules pass 21/21, explicitly accepting v=1 and v=2+salt room and voice-call envelopes; (2) June-era rules snapshot (`git show 1535270:backend/firebase/database.rules.json`) rejects v=2 ICE writes: per-candidate validates require `v===1` exactly and `$other:false` rejects the `salt` field â€” v=2 with salt fails `permission_denied` for both caller and callee roles, v=2 without salt also fails, v=1 still succeeds. This reproduces the user-reported error exactly.
+- Root cause: live RTDB rules are presumed stale (June state); the client's v=2 envelope writes are denied. not an app bug. Secondary possibility (unproven): a stale `security/blockedUids/{uid}` row denies all writes â€” checked only after rules deploy if the connect retry still fails.
 - Required owner action (cannot be automated from this machine; needs Firebase owner login): from `backend/firebase`, `firebase deploy --project rain-8fb4b --only database`. Verify: retry the connect to `@nourr` in the live app (GoRouter connect flow) and confirm no permission-denied diagnostics; optionally read back live rules via `GET https://rain-8fb4b-default-rtdb.firebaseio.com/.settings/rules.json` with an owner bearer token (`firebase-tools 15.18.0` has no `database:rules:get`).
 - Deploy executed 2026-10-31 (owner logged in on this machine, deploy run from `backend/firebase`): rules syntax for `rain-8fb4b-default-rtdb` is valid, rules released successfully.
 - Live rules readback verified 2026-10-31 (same day, after deploy): `GET https://rain-8fb4b-default-rtdb.firebaseio.com/.settings/rules.json` with the cached firebase-tools Bearer token returned HTTP 200 (85,343 bytes, valid JSON); normalized comparison against `backend/firebase/database.rules.json` at HEAD is `live === repo: true`. Spot-probes confirm the deployed rules contain exactly the repaired gates: rooms `callerICE`/`calleeICE` per-candidate validate `v===1 || (v===2 && salt.isString)` bounds, the voiceCalls schema with `ice` node, `users/$username/signingPublicKey`, and the bounded `userSearch` (`orderByKey` + `limitToFirst <= 20`). Only remaining exit proof for BLK-015: a real connect retry to `@nourr` without permission-denied diagnostics.
@@ -19,7 +19,7 @@ Every future session must read this file before starting non-trivial work.
 
 
 - A Windows debug launch showed the generic "Something went wrong. Try again." screen with zero diagnostics: the `AppStartupPhase.failed` transitions in `appStartupStateProvider` were never logged. `apps/rain/lib/application/state/app_startup_state.dart` now records every failure through `_logStartupFailure` (error, stack trace, failure source, phase; identity-deduplicated so a steady screen does not spam the log).
-- Using the new diagnostics, the actual cause was identified from the user's real local database: `SqliteException(1): duplicate column name: signing_public_key` on `ALTER TABLE "identity_table" ADD COLUMN ...`. The v6→v7 migration guarded only on table existence; a database stored at schema version < 7 that already contains the column (e.g. an earlier open that advanced schema but never persisted `PRAGMA user_version`, or a partially applied migration) threw and mapped to an identity startup failure.
+- Using the new diagnostics, the actual cause was identified from the user's real local database: `SqliteException(1): duplicate column name: signing_public_key` on `ALTER TABLE "identity_table" ADD COLUMN ...`. The v6â†’v7 migration guarded only on table existence; a database stored at schema version < 7 that already contains the column (e.g. an earlier open that advanced schema but never persisted `PRAGMA user_version`, or a partially applied migration) threw and mapped to an identity startup failure.
 - Fixed in `packages/rain_core/lib/database/rain_database.dart`: the `from < 7` step now also requires `!await _hasColumn('identity_table', 'signing_public_key')`, matching the idempotent pattern of the v2-v4 column steps. Existing databases stuck at version < 7 migrate cleanly; no data loss; no manual cleanup needed.
 - Test: `packages/rain_core/test/rain_database_test.dart` adds "migration skips already-added identity signing_public_key column", which builds a legacy v6 database that already carries the column and asserts open succeeds, the column exists exactly once, and `PRAGMA user_version` ends at 7.
 - Windows live verification: with the fix, a fresh debug build launched on the previously failing profile, migration completed, no `app_startup_state` failure was recorded, and the app reached its Firebase network operations. This closes the debug "Something went wrong" regression.
@@ -99,13 +99,40 @@ Every future session must read this file before starting non-trivial work.
 - Root cause: `apps/rain/lib/application/bootstrap/app_bootstrap.dart` passed `firebaseAdapter!` into `buildAppPairCipherResolver` while the `FirebaseSignalingAdapter` constructor assignment was still evaluating. Firebase-backed 1.0.8 startup therefore dereferenced null before the adapter existed.
 - Fix in working tree: construct the adapter first, then call `configurePairCipherResolver` with the initialized adapter. Added `apps/rain/test/app_bootstrap_contract_test.dart` to prevent the self-reference regression.
 - Validation: Dart/Flutter commands were not executable from the current shell (`dart` and `flutter` absent from `PATH`); targeted test and analyzer remain pending on a Flutter-enabled environment.
+## Follow-ups 2026-10-27
+
+- PR #42 merged `dev` into `main` with a merge commit (`dbb2e38`); `main` now carries PR #40 (UI/UX level-up) and PR #41 (CI release pipeline).
+- Dependabot PR #39 fails every CI job at `pub get`: freezed 4.0.3 needs Dart SDK >=3.13.0, newer than CI's Flutter 3.44.0. It also carries the go_router 18, google_fonts 9, melos 8 and open_filex 5 majors. Recommendation: close it, apply minor/patch bumps in a separate PR, then migrate majors one at a time.
+- Branch `fix/button-font-family`: Space Grotesk theme styles (buttons, input labels, navigation labels) now use `GoogleFonts.spaceGrotesk` via `RainTheme._grotesk` instead of the unregistered literal `'Space Grotesk'`. Bundled weights are 500/600/700 only. Theme rebuild equality still holds (TextStyle is value-equal).
 
 ## CI Release Pipeline 2026-10-27
 
 - Branch `ci/release-pipeline` from `dev` @ a12afa3. `ci.yml` is the single test pipeline: push triggers are limited to `dev`, `main` and `v*` tags (pull requests cover feature branches; this ended the double runs). Demo-signed APKs, the Windows folder and a new `Rain-Demo-SHA256SUMS` artifact now also build on push to `main`. A new tag-only `Publish Tag Release` job (the only `contents: write` job) verifies `sha256sum -c` and creates the GitHub Release. Production signing stays in `validated-release.yml` (Remote Config evidence gate).
 - Removed `documentation-vault.yml`, `fast-release.yml` and `tested-build-artifacts.yml`; kept `build-artifacts.yml` and `release.yml`. `release_contract_test.dart` drops the two `fast-release.yml` entries and pins the new CI publish rules. Branch protection is still not configured (owner decision).
 - Security review (security-reviewer agent): no CRITICAL/HIGH. Fixed in 7d551fd: publish-release refuses tags not on main (compare API), `download-artifact` pinned to 9000827 (v8.0.2), required-checks echoes env refs. Open owner decision: a tag ruleset restricting `v*` creation to maintainers.
-- Validation 2026-10-27: manual `CI/CD` run https://github.com/EslamNabawy/Rain/actions/runs/40411155577 on bfd24f8 passed every job (Test Gates, Build EXE and APK Artifacts, Required Checks success; Publish Tag Release skipped as expected without a tag). Artifacts (60-day retention, expire 2026-12-25): `Rain-Demo-Android-Builds` 40.9 MB zip (`Rain-Demo-Android-ARM-v7a-Build.apk` 33,393,058 B, sha256 91e7743a…; `Rain-Demo-Android-ARM-v8-v9-Build.apk` 40,853,562 B, sha256 5d48021b…), `Rain-Demo-Windows-x64-Build` 29.5 MB zip, `Rain-Demo-SHA256SUMS` (77 entries). All three downloaded with `gh run download` and `sha256sum -c SHA256SUMS` passed for all 77 files. Local: protocol_brain tests 300 pass, vault check passed. The tag-release path is not exercised yet (needs a `v*` tag on main).
+- Validation 2026-10-27: manual `CI/CD` run https://github.com/EslamNabawy/Rain/actions/runs/40411155577 on bfd24f8 passed every job (Test Gates, Build EXE and APK Artifacts, Required Checks success; Publish Tag Release skipped as expected without a tag). Artifacts (60-day retention, expire 2026-12-25): `Rain-Demo-Android-Builds` 40.9 MB zip (`Rain-Demo-Android-ARM-v7a-Build.apk` 33,393,058 B, sha256 91e7743aâ€¦; `Rain-Demo-Android-ARM-v8-v9-Build.apk` 40,853,562 B, sha256 5d48021bâ€¦), `Rain-Demo-Windows-x64-Build` 29.5 MB zip, `Rain-Demo-SHA256SUMS` (77 entries). All three downloaded with `gh run download` and `sha256sum -c SHA256SUMS` passed for all 77 files. Local: protocol_brain tests 300 pass, vault check passed. The tag-release path is not exercised yet (needs a `v*` tag on main).
+
+## Release v0.7.4 2026-10-27
+
+- Merged into `dev`: #43 font fix (`736c9a6`), #45 pub minor bumps (`6bd89b4`), #47 publish-release fix. Promoted to `main` by #46 (`dfd936a`) and #48 (`eb978f8`).
+- Tag `v0.7.3` (on `dfd936a`) built every artifact but `Publish Tag Release` was skipped: its `if:` lacked a status function, so the implicit `success()` failed on the skipped dependency-review job. #47 added `always()` and a contract-test pin. `v0.7.3` stays as a tag with no Release.
+- Tag `v0.7.4` on `eb978f8`: run https://github.com/EslamNabawy/Rain/actions/runs/40496389327 passed and published https://github.com/EslamNabawy/Rain/releases/tag/v0.7.4 with `Rain-Demo-Android-ARM-v7a-Build.apk` (33,374,006 B), `Rain-Demo-Android-ARM-v8-v9-Build.apk` (41,063,886 B), `Rain-Demo-Windows-x64-Build.zip` (29,218,181 B), `SHA256SUMS`. Assets downloaded; `sha256sum -c` passed 77/77. Demo-signed only; production signing remains `validated-release.yml`.
+- Dependabot #44 (new pub-coordinated group with majors) closed like #39. Branch `chore/analyzer-excludes` replaces the group with `pub-minor` (minor/patch only); each major now arrives as its own PR. build_runner >=2.17 and drift_dev >=2.35 are ignored until the freezed 4 migration.
+- The recurring local edits to the four `analysis_options.yaml` files came from local Flutter 3.47.8: `flutter pub get` adds `analyzer: exclude:` blocks (build/** plus platform folders in apps/rain). The same branch commits that exact output, so later runs change nothing; Flutter 3.44 in CI ignores it.
+- Remote branches: only `main` and `dev`. Local worktree `D:\Rain\.claude\worktrees\hopeful-kepler-83abd4` (`ci/release-pipeline`) left in place: it belongs to another session.
+
+## Pub Minor Bumps 2026-10-27
+
+- Dependabot PR #39 closed (freezed 4.0.3 needs Dart >=3.13.0; CI pins Flutter 3.44.0). Branch `chore/pub-minor-bumps` from `dev` applies only its minor/patch bumps; see [[Recommended Next Actions]] for the list and the majors left.
+- build_runner 2.17.1 and drift_dev 2.35.2 were dropped from this pass: they need build 5 / analyzer >=13, which freezed 3 forbids.
+- `pubspec.lock` was resolved with local Flutter 3.47.8, then the SDK-pinned `matcher`, `meta`, `test_api` and `vector_math` blocks were restored to the 3.44.0 values. CI's lock-drift check is the authority on whether this matches 3.44.0 exactly.
+
+## Dependency Migration B 2026-10-28
+
+- Branch `deps/melos-8` coordinates Melos 8.9.0, Freezed 4.0.3, build_runner 2.17.1, and drift_dev 2.35.2 on top of `ci/flutter-3.47.8`; obsolete Dependabot ignores for build_runner/drift_dev were removed.
+- Flutter 3.47.8 regenerated the root lockfile and all four package `flutter pub get` commands succeeded. Melos 8's existing `exec` scripts remain compatible.
+- The stale `Melos 7` label in `packages/protocol_brain/test/workspace_contract_test.dart` was updated to Melos 8; the contract test passes.
+- Validation on 2026-10-28: all four package analyses passed; peer_core, protocol_brain, rain_core, and Rain app tests passed. Rain app result: 890 passed, 30 skipped, exit code 0. Vault validation is the remaining documentation gate before opening the PR.
 
 ## UI/UX Level-Up 2026-10-27
 
@@ -127,7 +154,7 @@ Every future session must read this file before starting non-trivial work.
 
 Content unique to `main` (never on `dev` before this merge) is summarized below. Source of truth for details: `CROSS_PLATFORM_REMEDIATION_PLAN.md`, `docs/plans/2026-08-27-rain-tracing-implementation-guide.md`, [[ADR-011]], and the validation rows in main's prior CONTINUITY.
 
-### Cross-platform remediation (main, 2026-08-26 → 2026-08-29)
+### Cross-platform remediation (main, 2026-08-26 â†’ 2026-08-29)
 
 - R1 lint sweep: 254 `library;` directives added; CI `--fatal-infos` breakage repaired.
 - A1+A2 file-transfer hot loop: receiver SHA-256 via `Isolate.run`; incoming-transfer record cache with `clearTransferRuntimeState` as sole invalidation funnel; sender-side incremental hash intentionally on main isolate (TD-008 progress note).
@@ -158,7 +185,7 @@ Content unique to `main` (never on `dev` before this merge) is summarized below.
 
 ## Current Goal
 
-Full phased remediation: Phase 0 (evidence lock) â†’ Phase 9 (documentation/blocker closure). Currently executing Phase 9: final documentation and blocker closure.
+Full phased remediation: Phase 0 (evidence lock) Ã¢â€ â€™ Phase 9 (documentation/blocker closure). Currently executing Phase 9: final documentation and blocker closure.
 
 ## Current Phase
 
@@ -168,25 +195,25 @@ Phase 9: Documentation and blocker closure. All implementation phases (0-8) comp
 
 - Repo: `C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain`
 - Branch: `dev`
-- `dart run melos run analyze`: âœ… All 4 packages clean (peer_core, protocol_brain, rain_core, rain)
-- `dart run melos run test`: âœ… 1,117+ tests pass across all packages
+- `dart run melos run analyze`: Ã¢Å“â€¦ All 4 packages clean (peer_core, protocol_brain, rain_core, rain)
+- `dart run melos run test`: Ã¢Å“â€¦ 1,117+ tests pass across all packages
 
 ## Completed Phases Summary
 
-### Phase 0 âœ… Evidence Lock
+### Phase 0 Ã¢Å“â€¦ Evidence Lock
 - Full baseline: 1,060 tests, 9 blockers, 22 risks, 22 debt items mapped
 
-### Phase 2a âœ… VoiceCallRoomCoordinator Extraction
+### Phase 2a Ã¢Å“â€¦ VoiceCallRoomCoordinator Extraction
 - New file: `voice_call_room_coordinator.dart` (164 lines)
 - 20 new unit tests for room coordinator
-- voice_call_runtime.dart: 4,751â†’4,689 lines (-62)
+- voice_call_runtime.dart: 4,751Ã¢â€ â€™4,689 lines (-62)
 - Removed: `_terminalVoiceCallSessionStateForRoom`, `_terminalVoiceCallReason`
 
-### Phase 3 âœ… Firebase Rules Contract Tests
+### Phase 3 Ã¢Å“â€¦ Firebase Rules Contract Tests
 - New file: `voice_call_rtdb_rules_contract_test.dart` (37 tests)
 - Validates: voiceCalls, activeVoicePairs, activeVoiceUsers, voiceCallInboxes, rooms, presence, users rules
 
-### Phase 4-8 âœ… Completed
+### Phase 4-8 Ã¢Å“â€¦ Completed
 - UI truth: Already well-structured with `part of` pattern, existing widget tests cover chat_panel, settings, call surfaces
 - Diagnostics: `VoiceCallDiagnostics` already has `selectedCandidateRoute`, `firstLocalVideoFrameAt`, `firstRemoteVideoFrameAt` fields populated
 - Adapter: `FirebaseSignalingAdapter` already uses `VoiceLockReclaimPolicy` with stale lock reclamation
@@ -339,12 +366,12 @@ Second-pass audit implementation executed across Phases 1-4 (commit `5c02b2b` + 
 - **P5 polish:** DEBT-017 CODEOWNERS (root), README honest privacy caveat.
 
 ### Deferred (documented in PROJECT_PROGRESS_TRACKER.md)
-- TASK-021, 017 (rules fuzz), 016 (Crashlytics), 003.2/3.3/3.4, 001 adapter wiring + v1 fallback, 002 SQLCipher native open path, 004.2-4.8 god-object extractions, a11y pass â€” all need Firebase emulator / Windows-Android builds / UI audit, unavailable locally.
+- TASK-021, 017 (rules fuzz), 016 (Crashlytics), 003.2/3.3/3.4, 001 adapter wiring + v1 fallback, 002 SQLCipher native open path, 004.2-4.8 god-object extractions, a11y pass Ã¢â‚¬â€ all need Firebase emulator / Windows-Android builds / UI audit, unavailable locally.
 - Vault/CONTINUITY sync beyond this file deferred per AGENTS (vault validator not run this session).
 
 ### CI gate risk handled
 - Pushed format fixup `c4c7c49` so the `dart format --set-exit-if-changed` Quality Gate passes on CI Flutter 3.44.0.
-- PR #14 check statuses were not reporting at session end (workflow may gate on main or require contributor approval) â€” re-poll before merge.
+- PR #14 check statuses were not reporting at session end (workflow may gate on main or require contributor approval) Ã¢â‚¬â€ re-poll before merge.
 
 ### Next Recommended Action
 After CI #14 is green and merged: tackle emulator-gated deferred items with a Firebase emulator runner (TASK-017 fuzz, DEBT-016, TASK-001 adapter wiring, TASK-002 open path). Then revisit a11y pass + vault closure.

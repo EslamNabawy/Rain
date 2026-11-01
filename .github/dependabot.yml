@@ -25,6 +25,9 @@ updates:
     schedule:
       interval: weekly
     groups:
-      pub-coordinated:
+      pub-minor:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch

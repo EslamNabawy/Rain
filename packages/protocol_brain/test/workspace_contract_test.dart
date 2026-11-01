@@ -1,6 +1,6 @@
 /// # workspace_contract_test.dart — protocol_brain package
 ///
-/// Contract tests verifying Melos 7 workspace configuration, package discovery, workspace resolution, and local defines in gitignore.
+/// Contract tests verifying Melos workspace configuration, package discovery, workspace resolution, and local defines in gitignore.
 ///
 /// **Key types:** (no top-level types — test-only file)
 ///
@@ -22,7 +22,7 @@ String _repoFile(String relativePath) {
 }
 
 void main() {
-  test('Melos 7 workspace config discovers the maintained Rain packages', () {
+  test('Melos 8 workspace config discovers the maintained Rain packages', () {
     final rootPubspec = _repoFile('pubspec.yaml');
 
     expect(rootPubspec, contains('workspace:'));

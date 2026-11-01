@@ -715,6 +715,14 @@ void main() {
     expect(workflow, contains('sha256sum -c SHA256SUMS'));
     expect(workflow, contains("startsWith(github.ref, 'refs/tags/v')"));
     expect(workflow, contains('needs.publish-release.result'));
+    // Without always(), a skipped upstream job silently skips the release.
+    expect(
+      workflow,
+      contains(
+        "if: \${{ always() && startsWith(github.ref, 'refs/tags/v') && "
+        "needs.release-artifacts.result == 'success' }}",
+      ),
+    );
     // Only the publish job may write; the workflow default stays read-only.
     expect(workflow, contains('permissions:\n  contents: read'));
     expect(
@@ -813,7 +821,7 @@ void main() {
   test('Rain core uses bundled SQLite native library packaging', () {
     final pubspec = _repoFile('packages/rain_core/pubspec.yaml');
 
-    expect(pubspec, contains('drift_flutter: ^0.3.0'));
+    expect(pubspec, contains('drift_flutter: ^0.3.1'));
     expect(pubspec, contains('sqlite3: ^3.3.1'));
     expect(pubspec, isNot(contains('sqlite3_flutter_libs:')));
   });
