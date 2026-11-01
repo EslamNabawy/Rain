@@ -6,9 +6,9 @@ void main() {
   test(
     'Firebase bootstrap configures the pair resolver after adapter creation',
     () {
-    final source = File(
-      'lib/application/bootstrap/app_bootstrap.dart',
-    ).readAsStringSync();
+      final source = File(
+        'lib/application/bootstrap/app_bootstrap.dart',
+      ).readAsStringSync();
 
       expect(
         source,
